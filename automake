@@ -1,4 +1,8 @@
 #!/bin/sh
 
-make -j4 && make uImage && cp arch/arm/boot/uImage /tftpboot/
-echo "Finished"
+make -j4 ; 
+echo "------Make Finished------"
+make uImage;
+echo "------uImage Finished------"
+cp arch/arm/boot/uImage /tftpboot/;
+echo "------Finished------"

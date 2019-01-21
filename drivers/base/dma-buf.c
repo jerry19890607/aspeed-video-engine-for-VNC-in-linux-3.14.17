@@ -29,6 +29,8 @@
 #include <linux/export.h>
 #include <linux/debugfs.h>
 #include <linux/seq_file.h>
+#include <linux/module.h>
+#include <linux/reservation.h>
 
 static inline int is_dma_buf_file(struct file *);
 
@@ -178,6 +180,99 @@ struct dma_buf *dma_buf_export_named(void *priv, const struct dma_buf_ops *ops,
 	return dmabuf;
 }
 EXPORT_SYMBOL_GPL(dma_buf_export_named);
+
+/**
+ * dma_buf_export - Creates a new dma_buf, and associates an anon file
+ * with this buffer, so it can be exported.
+ * Also connect the allocator specific data and ops to the buffer.
+ * Additionally, provide a name string for exporter; useful in debugging.
+ *
+ * @exp_info:	[in]	holds all the export related information provided
+ *			by the exporter. see &struct dma_buf_export_info
+ *			for further details.
+ *
+ * Returns, on success, a newly created dma_buf object, which wraps the
+ * supplied private data and operations for dma_buf_ops. On either missing
+ * ops, or error in allocating struct dma_buf, will return negative error.
+ *
+ * For most cases the easiest way to create @exp_info is through the
+ * %DEFINE_DMA_BUF_EXPORT_INFO macro.
+ */
+struct dma_buf *dma_buf_export(const struct dma_buf_export_info *exp_info)
+{
+	struct dma_buf *dmabuf;
+	struct reservation_object *resv = exp_info->resv;
+	struct file *file;
+	size_t alloc_size = sizeof(struct dma_buf);
+	int ret;
+
+	if (!exp_info->resv)
+		alloc_size += sizeof(struct reservation_object);
+	else
+		/* prevent &dma_buf[1] == dma_buf->resv */
+		alloc_size += 1;
+
+	if (WARN_ON(!exp_info->priv
+			  || !exp_info->ops
+			  || !exp_info->ops->map_dma_buf
+			  || !exp_info->ops->unmap_dma_buf
+			  || !exp_info->ops->release
+			  || !exp_info->ops->map_atomic
+			  || !exp_info->ops->map
+			  || !exp_info->ops->mmap)) {
+		return ERR_PTR(-EINVAL);
+	}
+
+	if (!try_module_get(exp_info->owner))
+		return ERR_PTR(-ENOENT);
+
+	dmabuf = kzalloc(alloc_size, GFP_KERNEL);
+	if (!dmabuf) {
+		ret = -ENOMEM;
+		goto err_module;
+	}
+
+	dmabuf->priv = exp_info->priv;
+	dmabuf->ops = exp_info->ops;
+	dmabuf->size = exp_info->size;
+	dmabuf->exp_name = exp_info->exp_name;
+	dmabuf->owner = exp_info->owner;
+	init_waitqueue_head(&dmabuf->poll);
+	dmabuf->cb_excl.poll = dmabuf->cb_shared.poll = &dmabuf->poll;
+	dmabuf->cb_excl.active = dmabuf->cb_shared.active = 0;
+
+	if (!resv) {
+		resv = (struct reservation_object *)&dmabuf[1];
+		reservation_object_init(resv);
+	}
+	dmabuf->resv = resv;
+
+	file = anon_inode_getfile("dmabuf", &dma_buf_fops, dmabuf,
+					exp_info->flags);
+	if (IS_ERR(file)) {
+		ret = PTR_ERR(file);
+		goto err_dmabuf;
+	}
+
+	file->f_mode |= FMODE_LSEEK;
+	dmabuf->file = file;
+
+	mutex_init(&dmabuf->lock);
+	INIT_LIST_HEAD(&dmabuf->attachments);
+
+	mutex_lock(&db_list.lock);
+	list_add(&dmabuf->list_node, &db_list.head);
+	mutex_unlock(&db_list.lock);
+
+	return dmabuf;
+
+err_dmabuf:
+	kfree(dmabuf);
+err_module:
+	module_put(exp_info->owner);
+	return ERR_PTR(ret);
+}
+EXPORT_SYMBOL_GPL(dma_buf_export);
 
 
 /**

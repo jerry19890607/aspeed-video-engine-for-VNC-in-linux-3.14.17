@@ -185,7 +185,7 @@ EXPORT_SYMBOL(v4l2_ctrl_query_menu_valid_items);
    When no more controls are available 0 is returned. */
 u32 v4l2_ctrl_next(const u32 * const * ctrl_classes, u32 id)
 {
-	u32 ctrl_class = V4L2_CTRL_ID2CLASS(id);
+	u32 ctrl_class = V4L2_CTRL_ID2WHICH(id);
 	const u32 *pctrl;
 
 	if (ctrl_classes == NULL)
@@ -194,7 +194,7 @@ u32 v4l2_ctrl_next(const u32 * const * ctrl_classes, u32 id)
 	/* if no query is desired, then check if the ID is part of ctrl_classes */
 	if ((id & V4L2_CTRL_FLAG_NEXT_CTRL) == 0) {
 		/* find class */
-		while (*ctrl_classes && V4L2_CTRL_ID2CLASS(**ctrl_classes) != ctrl_class)
+		while (*ctrl_classes && V4L2_CTRL_ID2WHICH(**ctrl_classes) != ctrl_class)
 			ctrl_classes++;
 		if (*ctrl_classes == NULL)
 			return 0;
@@ -207,7 +207,7 @@ u32 v4l2_ctrl_next(const u32 * const * ctrl_classes, u32 id)
 	id++;	/* select next control */
 	/* find first class that matches (or is greater than) the class of
 	   the ID */
-	while (*ctrl_classes && V4L2_CTRL_ID2CLASS(**ctrl_classes) < ctrl_class)
+	while (*ctrl_classes && V4L2_CTRL_ID2WHICH(**ctrl_classes) < ctrl_class)
 		ctrl_classes++;
 	/* no more classes */
 	if (*ctrl_classes == NULL)
