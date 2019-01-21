@@ -22,18 +22,14 @@
 #include <linux/videodev2.h>
 #include <linux/wait.h>
 #include <linux/workqueue.h>
-#include <linux/slab.h>
 #include <media/v4l2-ctrls.h>
 #include <media/v4l2-dev.h>
 #include <media/v4l2-device.h>
 #include <media/v4l2-event.h>
 #include <media/v4l2-ioctl.h>
 #include <media/videobuf2-dma-contig.h>
-#include <media/videobuf2-core.h>
-#include <media/videobuf2-v4l2.h>
 
 #define DEVICE_NAME			"aspeed-video"
-#define DRV_VERSION 		"0.00"
 
 #define ASPEED_VIDEO_JPEG_NUM_QUALITIES	12
 #define ASPEED_VIDEO_JPEG_HEADER_SIZE	10
@@ -173,18 +169,6 @@
 #define VE_MODE_DETECT			0x30c
 #define VE_MEM_RESTRICT_START		0x310
 #define VE_MEM_RESTRICT_END		0x314
-
-/*
-struct vb2_v4l2_buffer {
-	struct vb2_buffer	vb2_buf;
-
-	__u32			flags;
-	__u32			field;
-	struct timeval		timestamp;
-	struct v4l2_timecode	timecode;
-	__u32			sequence;
-};
-*/
 
 enum {
 	VIDEO_MODE_DETECT_DONE,
@@ -503,8 +487,6 @@ static void aspeed_video_on(struct aspeed_video *video)
 	reset_control_deassert(video->rst);
 }
 
-#define V4L2_BUF_FLAG_LAST			0x00100000
-
 static void aspeed_video_bufs_done(struct aspeed_video *video,
 				   enum vb2_buffer_state state)
 {
@@ -573,7 +555,7 @@ static irqreturn_t aspeed_video_irq(int irq, void *arg)
 			vb2_set_plane_payload(&buf->vb.vb2_buf, 0, frame_size);
 
 			if (!list_is_last(&buf->link, &video->buffers)) {
-				//buf->vb.vb2_buf.timestamp = ktime_get_ns();
+				buf->vb.vb2_buf.timestamp = ktime_get_ns();
 				buf->vb.sequence = video->sequence++;
 				buf->vb.field = V4L2_FIELD_NONE;
 				vb2_buffer_done(&buf->vb.vb2_buf,
@@ -940,10 +922,8 @@ static void aspeed_video_stop(struct aspeed_video *video)
 static int aspeed_video_querycap(struct file *file, void *fh,
 				 struct v4l2_capability *cap)
 {
-	//strscpy(cap->driver, DEVICE_NAME, sizeof(cap->driver));
-	//strscpy(cap->card, "Aspeed Video Engine", sizeof(cap->card));
-	strlcpy(cap->driver, DEVICE_NAME, sizeof(cap->driver));
-	strlcpy(cap->card, "Aspeed Video Engine", sizeof(cap->card));
+	strscpy(cap->driver, DEVICE_NAME, sizeof(cap->driver));
+	strscpy(cap->card, "Aspeed Video Engine", sizeof(cap->card));
 	snprintf(cap->bus_info, sizeof(cap->bus_info), "platform:%s",
 		 DEVICE_NAME);
 
@@ -951,7 +931,7 @@ static int aspeed_video_querycap(struct file *file, void *fh,
 }
 
 static int aspeed_video_enum_format(struct file *file, void *fh,
-				    struct v4l2_fmtdesc *f)
+				    struct v4l2_jjjmtdesc *f)
 {
 	if (f->index)
 		return -EINVAL;
@@ -977,8 +957,7 @@ static int aspeed_video_enum_input(struct file *file, void *fh,
 	if (inp->index)
 		return -EINVAL;
 
-//	strscpy(inp->name, "Host VGA capture", sizeof(inp->name));
-	strlcpy(inp->name, "Host VGA capture", sizeof(inp->name));
+	strscpy(inp->name, "Host VGA capture", sizeof(inp->name));
 	inp->type = V4L2_INPUT_TYPE_CAMERA;
 	inp->capabilities = V4L2_IN_CAP_DV_TIMINGS;
 	inp->status = V4L2_IN_ST_NO_SIGNAL | V4L2_IN_ST_NO_SYNC;
@@ -1298,13 +1277,12 @@ static void aspeed_video_resolution_work(struct work_struct *work)
 
 	if (video->width != video->pix_fmt.width ||
 	    video->height != video->pix_fmt.height) {
-		/*
 		static const struct v4l2_event ev = {
 			.type = V4L2_EVENT_SOURCE_CHANGE,
 			.u.src_change.changes = V4L2_EVENT_SRC_CH_RESOLUTION,
 		};
+
 		v4l2_event_queue(&video->vdev, &ev);
-		*/
 	}
 
 done:
@@ -1457,13 +1435,12 @@ static int aspeed_video_setup_video(struct aspeed_video *video)
 	struct vb2_queue *vbq = &video->queue;
 	struct video_device *vdev = &video->vdev;
 	int rc;
-
+/* register v4l2 */
 	video->pix_fmt.pixelformat = V4L2_PIX_FMT_JPEG;
 	video->pix_fmt.field = V4L2_FIELD_NONE;
 	video->pix_fmt.colorspace = V4L2_COLORSPACE_SRGB;
 	video->pix_fmt.quantization = V4L2_QUANTIZATION_FULL_RANGE;
 
-	printk("jerry register v4l2\n");
 	rc = v4l2_device_register(video->dev, v4l2_dev);
 	if (rc) {
 		dev_err(video->dev, "Failed to register v4l2 device\n");
@@ -1471,9 +1448,10 @@ static int aspeed_video_setup_video(struct aspeed_video *video)
 	}
 
 	v4l2_ctrl_handler_init(&video->ctrl_handler, 2);
-	v4l2_ctrl_new_std(&video->ctrl_handler, &aspeed_video_ctrl_ops,
-			  V4L2_CID_JPEG_COMPRESSION_QUALITY, 0,
-			  ASPEED_VIDEO_JPEG_NUM_QUALITIES - 1, 1, 0);
+	v4l2_ctrl_new_std(&video->ctrl_handler, 
+						&aspeed_video_ctrl_ops,
+			  			V4L2_CID_JPEG_COMPRESSION_QUALITY, 0,
+			  			ASPEED_VIDEO_JPEG_NUM_QUALITIES - 1, 1, 0);
 	v4l2_ctrl_new_std_menu(&video->ctrl_handler, &aspeed_video_ctrl_ops,
 			       V4L2_CID_JPEG_CHROMA_SUBSAMPLING,
 			       V4L2_JPEG_CHROMA_SUBSAMPLING_420, mask,
@@ -1490,6 +1468,7 @@ static int aspeed_video_setup_video(struct aspeed_video *video)
 
 	v4l2_dev->ctrl_handler = &video->ctrl_handler;
 
+/* register video buffer 2 */
 	vbq->type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
 	vbq->io_modes = VB2_MMAP | VB2_READ | VB2_DMABUF;
 	vbq->dev = v4l2_dev->dev;
@@ -1510,12 +1489,12 @@ static int aspeed_video_setup_video(struct aspeed_video *video)
 		return rc;
 	}
 
+/* register video device */
 	vdev->queue = vbq;
 	vdev->fops = &aspeed_video_v4l2_fops;
-	vdev->device_caps = V4L2_CAP_VIDEO_CAPTURE | V4L2_CAP_READWRITE |
-		V4L2_CAP_STREAMING;
+	vdev->device_caps = V4L2_CAP_VIDEO_CAPTURE | V4L2_CAP_READWRITE | V4L2_CAP_STREAMING;
 	vdev->v4l2_dev = v4l2_dev;
-	strlcpy(vdev->name, DEVICE_NAME, sizeof(vdev->name));
+	strscpy(vdev->name, DEVICE_NAME, sizeof(vdev->name));
 	vdev->vfl_type = VFL_TYPE_GRABBER;
 	vdev->vfl_dir = VFL_DIR_RX;
 	vdev->release = video_device_release_empty;
@@ -1543,12 +1522,10 @@ static int aspeed_video_init(struct aspeed_video *video)
 	struct device *dev = video->dev;
 
 	irq = irq_of_parse_and_map(dev->of_node, 0);
-	printk("irq: %d\n",irq);
-	/*
 	if (!irq) {
 		dev_err(dev, "Unable to find IRQ\n");
 		return -ENODEV;
-	}*/
+	}
 
 	rc = devm_request_irq(dev, irq, aspeed_video_irq, IRQF_SHARED,
 			      DEVICE_NAME, video);
@@ -1606,8 +1583,6 @@ static int aspeed_video_probe(struct platform_device *pdev)
 	struct resource *res;
 	struct aspeed_video *video = kzalloc(sizeof(*video), GFP_KERNEL);
 
-	
-	printk("jerry aspeed_video_probe\n");
 	if (!video)
 		return -ENOMEM;
 
@@ -1618,21 +1593,17 @@ static int aspeed_video_probe(struct platform_device *pdev)
 	INIT_DELAYED_WORK(&video->res_work, aspeed_video_resolution_work);
 	INIT_LIST_HEAD(&video->buffers);
 
-	printk("jerry 1616\n");
-
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 
 	video->base = devm_ioremap_resource(video->dev, res);
 
 	if (IS_ERR(video->base))
 		return PTR_ERR(video->base);
-	
-	printk("jerry aspeed_video_init\n");
+
 	rc = aspeed_video_init(video);
 	if (rc)
 		return rc;
 
-	printk("jerry aspeed_video_setup_video\n");
 	rc = aspeed_video_setup_video(video);
 	if (rc)
 		return rc;
@@ -1648,7 +1619,7 @@ static int aspeed_video_remove(struct platform_device *pdev)
 
 	video_unregister_device(&video->vdev);
 
-	vb2_core_queue_release(&video->queue);
+	vb2_queue_release(&video->queue);
 
 	v4l2_ctrl_handler_free(&video->ctrl_handler);
 
@@ -1662,80 +1633,23 @@ static int aspeed_video_remove(struct platform_device *pdev)
 	return 0;
 }
 
-/*
 static const struct of_device_id aspeed_video_of_match[] = {
 	{ .compatible = "aspeed,ast2400-video-engine" },
 	{ .compatible = "aspeed,ast2500-video-engine" },
 	{}
 };
 MODULE_DEVICE_TABLE(of, aspeed_video_of_match);
-*/
 
 static struct platform_driver aspeed_video_driver = {
 	.driver = {
-		/* DTS
 		.name = DEVICE_NAME,
 		.of_match_table = aspeed_video_of_match,
-		*/
-		.name   = DEVICE_NAME,
-		.owner  = THIS_MODULE,
 	},
 	.probe = aspeed_video_probe,
 	.remove = aspeed_video_remove,
 };
+
 module_platform_driver(aspeed_video_driver);
-//module_platform_driver_probe(aspeed_video_driver, aspeed_video_probe);
-
-extern void __init ast_add_device_video(void);
-static int __init ast_video_init(void)
-{
-	printk("\n\n[Jerry] AST video engine Driver : Ver %s\n",DRV_VERSION);
-	ast_add_device_video();
-	return platform_driver_probe(&aspeed_video_driver, aspeed_video_probe);
-	return 0;
-}
-
-static void __exit ast_video_exit(void)
-{
-	platform_driver_unregister(&aspeed_video_driver);
-}
-
-static u64 ast_video_dmamask = 0xffffffffUL;
-static struct resource ast_video_resources[] =
-{
-	[0] = {
-		.start = AST_VIDEO_BASE,
-		.end = AST_VIDEO_BASE + SZ_128K - 1,
-		.flags = IORESOURCE_MEM,
-	},
-	[1] = {
-		.start = IRQ_VIDEO,
-		.end = IRQ_VIDEO,
-		.flags = IORESOURCE_IRQ,
-	}
-};
-
-static struct platform_device ast_video_device =
-{
-    .name       = DEVICE_NAME,
-	.id     = 1,
-    .dev        = {
-                .dma_mask       = &ast_video_dmamask,
-                .coherent_dma_mask  = 0xffffffff,
-                //.platform_data = &ast_video_data,
-    },
-    .resource   = ast_video_resources,
-    .num_resources = ARRAY_SIZE(ast_video_resources),
-};
-
-void __init ast_add_device_video(void)
-{
-	printk("platform_device_register\n");
-    platform_device_register(&ast_video_device);
-}
-
-module_init(ast_video_init)
-module_exit(ast_video_exit)
 
 MODULE_DESCRIPTION("ASPEED Video Engine Driver");
 MODULE_AUTHOR("Eddie James");
