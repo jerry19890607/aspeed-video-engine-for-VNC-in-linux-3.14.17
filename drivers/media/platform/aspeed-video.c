@@ -525,6 +525,7 @@ static irqreturn_t aspeed_video_irq(int irq, void *arg)
 {
 	struct aspeed_video *video = arg;
 	u32 sts = aspeed_video_read(video, VE_INTERRUPT_STATUS);
+	printk("jerry 1e70 reg: 0x%X\n",sts);
 
 	if (atomic_read(&video->clients) == 0) {
 		dev_info(video->dev, "irq with no client; disabling irqs\n");
@@ -1541,40 +1542,49 @@ static int aspeed_video_init(struct aspeed_video *video)
 	int irq;
 	int rc;
 	struct device *dev = video->dev;
-
+/*
 	irq = irq_of_parse_and_map(dev->of_node, 0);
 	printk("irq: %d\n",irq);
-	/*
 	if (!irq) {
 		dev_err(dev, "Unable to find IRQ\n");
 		return -ENODEV;
-	}*/
+	}
+*/
+	irq = 7;
 
-	rc = devm_request_irq(dev, irq, aspeed_video_irq, IRQF_SHARED,
+	rc = request_irq(irq, aspeed_video_irq, IRQF_SHARED,
 			      DEVICE_NAME, video);
+	//rc = devm_request_irq(dev, irq, aspeed_video_irq, IRQF_SHARED,
+	//		      DEVICE_NAME, video);
+	printk("jerry irq: %d, rc: %d\n", irq, rc);
 	if (rc < 0) {
 		dev_err(dev, "Unable to request IRQ %d\n", irq);
 		return rc;
 	}
 
-	video->eclk = devm_clk_get(dev, "eclk");
+	video->eclk = clk_get(dev, "eclk");
+	//video->eclk = devm_clk_get(dev, "eclk");
 	if (IS_ERR(video->eclk)) {
 		dev_err(dev, "Unable to get ECLK\n");
 		return PTR_ERR(video->eclk);
 	}
 
-	video->vclk = devm_clk_get(dev, "vclk");
+	video->vclk = clk_get(dev, "vclk");
+	//video->vclk = devm_clk_get(dev, "vclk");
 	if (IS_ERR(video->vclk)) {
 		dev_err(dev, "Unable to get VCLK\n");
 		return PTR_ERR(video->vclk);
 	}
-
+/*
 	video->rst = devm_reset_control_get_exclusive(dev, NULL);
+	video->rst = reset_control_get_exclusive(dev, NULL);
+	video->rst = reset_control_get(dev, NULL);
+	printk("jerry video->rst.id: %d\n",video->rst.id);
 	if (IS_ERR(video->rst)) {
 		dev_err(dev, "Unable to get VE reset\n");
 		return PTR_ERR(video->rst);
 	}
-
+*/
 	rc = of_reserved_mem_device_init(dev);
 	if (rc) {
 		dev_err(dev, "Unable to reserve memory\n");
@@ -1607,7 +1617,7 @@ static int aspeed_video_probe(struct platform_device *pdev)
 	struct aspeed_video *video = kzalloc(sizeof(*video), GFP_KERNEL);
 
 	
-	printk("jerry aspeed_video_probe\n");
+	printk("--jerry aspeed_video_probe--\n");
 	if (!video)
 		return -ENOMEM;
 
@@ -1618,21 +1628,20 @@ static int aspeed_video_probe(struct platform_device *pdev)
 	INIT_DELAYED_WORK(&video->res_work, aspeed_video_resolution_work);
 	INIT_LIST_HEAD(&video->buffers);
 
-	printk("jerry 1616\n");
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 
 	video->base = devm_ioremap_resource(video->dev, res);
-
+	printk("jerry video->base: 0x%p\n",video->base);
 	if (IS_ERR(video->base))
 		return PTR_ERR(video->base);
 	
-	printk("jerry aspeed_video_init\n");
+	printk("--jerry aspeed_video_init--\n");
 	rc = aspeed_video_init(video);
 	if (rc)
 		return rc;
 
-	printk("jerry aspeed_video_setup_video\n");
+	printk("--jerry aspeed_video_setup_video--\n");
 	rc = aspeed_video_setup_video(video);
 	if (rc)
 		return rc;
@@ -1683,24 +1692,7 @@ static struct platform_driver aspeed_video_driver = {
 	.probe = aspeed_video_probe,
 	.remove = aspeed_video_remove,
 };
-module_platform_driver(aspeed_video_driver);
-//module_platform_driver_probe(aspeed_video_driver, aspeed_video_probe);
 
-extern void __init ast_add_device_video(void);
-static int __init ast_video_init(void)
-{
-	printk("\n\n[Jerry] AST video engine Driver : Ver %s\n",DRV_VERSION);
-	ast_add_device_video();
-	return platform_driver_probe(&aspeed_video_driver, aspeed_video_probe);
-	return 0;
-}
-
-static void __exit ast_video_exit(void)
-{
-	platform_driver_unregister(&aspeed_video_driver);
-}
-
-static u64 ast_video_dmamask = 0xffffffffUL;
 static struct resource ast_video_resources[] =
 {
 	[0] = {
@@ -1718,20 +1710,23 @@ static struct resource ast_video_resources[] =
 static struct platform_device ast_video_device =
 {
     .name       = DEVICE_NAME,
-	.id     = 1,
-    .dev        = {
-                .dma_mask       = &ast_video_dmamask,
-                .coherent_dma_mask  = 0xffffffff,
-                //.platform_data = &ast_video_data,
-    },
+	.id			= -1,
     .resource   = ast_video_resources,
     .num_resources = ARRAY_SIZE(ast_video_resources),
 };
 
-void __init ast_add_device_video(void)
+static int __init ast_video_init(void)
 {
-	printk("platform_device_register\n");
+	printk("\n\n[jerry] AST video engine Driver : Ver %s\n",DRV_VERSION);
     platform_device_register(&ast_video_device);
+	platform_driver_probe(&aspeed_video_driver, aspeed_video_probe);
+	return 0;
+}
+
+static void __exit ast_video_exit(void)
+{
+    platform_device_unregister(&ast_video_device);
+	platform_driver_unregister(&aspeed_video_driver);
 }
 
 module_init(ast_video_init)
