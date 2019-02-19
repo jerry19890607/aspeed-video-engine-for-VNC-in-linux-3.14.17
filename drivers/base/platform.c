@@ -620,6 +620,7 @@ int __init_or_module platform_driver_probe(struct platform_driver *drv,
 		printk("jerry fail!!\n\n");
 		platform_driver_unregister(drv);
 	}
+	printk("jerry probe successfully!!\n\n");
 	return retval;
 }
 EXPORT_SYMBOL_GPL(platform_driver_probe);

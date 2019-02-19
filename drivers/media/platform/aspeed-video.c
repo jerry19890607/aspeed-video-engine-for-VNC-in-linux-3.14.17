@@ -1584,7 +1584,7 @@ static int aspeed_video_init(struct aspeed_video *video)
 		dev_err(dev, "Unable to get VE reset\n");
 		return PTR_ERR(video->rst);
 	}
-*/
+
 	rc = of_reserved_mem_device_init(dev);
 	if (rc) {
 		dev_err(dev, "Unable to reserve memory\n");
@@ -1597,6 +1597,7 @@ static int aspeed_video_init(struct aspeed_video *video)
 		of_reserved_mem_device_release(dev);
 		return rc;
 	}
+*/
 
 	if (!aspeed_video_alloc_buf(video, &video->jpeg,
 				    VE_JPEG_HEADER_SIZE)) {
@@ -1711,6 +1712,9 @@ static struct platform_device ast_video_device =
 {
     .name       = DEVICE_NAME,
 	.id			= -1,
+	.dev        = {
+					.coherent_dma_mask  = 0xffffffff,
+	},
     .resource   = ast_video_resources,
     .num_resources = ARRAY_SIZE(ast_video_resources),
 };
