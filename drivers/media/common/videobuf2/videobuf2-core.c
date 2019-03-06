@@ -1411,8 +1411,8 @@ int vb2_core_qbuf(struct vb2_queue *q, unsigned int index, void *pb)
 	q->waiting_for_buffers = false;
 	vb->state = VB2_BUF_STATE_QUEUED;
 
-	//if (pb)
-	//	call_void_bufop(q, copy_timestamp, vb, pb);
+	if (pb)
+		call_void_bufop(q, copy_timestamp, vb, pb);
 
 	trace_vb2_qbuf(q, vb);
 
@@ -2345,7 +2345,7 @@ static size_t __vb2_perform_fileio(struct vb2_queue *q, char __user *data, size_
 	 * should copy timestamps if V4L2_BUF_FLAG_TIMESTAMP_COPY is set. Nobody
 	 * else is able to provide this information with the write() operation.
 	 */
-	//bool copy_timestamp = !read && q->copy_timestamp;
+	bool copy_timestamp = !read && q->copy_timestamp;
 	unsigned index;
 	int ret;
 
@@ -2451,8 +2451,8 @@ static size_t __vb2_perform_fileio(struct vb2_queue *q, char __user *data, size_
 		 */
 		b->planes[0].bytesused = buf->pos;
 
-		//if (copy_timestamp)
-		//	b->timestamp = ktime_get_ns();
+		if (copy_timestamp)
+			b->timestamp = ktime_to_ns(ktime_get());
 		ret = vb2_core_qbuf(q, index, NULL);
 		dprintk(5, "vb2_dbuf result: %d\n", ret);
 		if (ret)
@@ -2515,14 +2515,14 @@ static int vb2_thread(void *data)
 {
 	struct vb2_queue *q = data;
 	struct vb2_threadio_data *threadio = q->threadio;
-	//bool copy_timestamp = false;
+	bool copy_timestamp = false;
 	unsigned prequeue = 0;
 	unsigned index = 0;
 	int ret = 0;
 
 	if (q->is_output) {
 		prequeue = q->num_buffers;
-		//copy_timestamp = q->copy_timestamp;
+		copy_timestamp = q->copy_timestamp;
 	}
 
 	set_freezable();
@@ -2553,8 +2553,8 @@ static int vb2_thread(void *data)
 			if (threadio->fnc(vb, threadio->priv))
 				break;
 		call_void_qop(q, wait_finish, q);
-		//if (copy_timestamp)
-		//	vb->timestamp = ktime_get_ns();
+		if (copy_timestamp)
+			vb->timestamp = ktime_to_ns(ktime_get());
 		if (!threadio->stop)
 			ret = vb2_core_qbuf(q, vb->index, NULL);
 		call_void_qop(q, wait_prepare, q);

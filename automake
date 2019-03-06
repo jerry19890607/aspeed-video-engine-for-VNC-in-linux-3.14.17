@@ -5,4 +5,5 @@ echo "------Make Finished------"
 make uImage;
 echo "------uImage Finished------"
 cp arch/arm/boot/uImage /tftpboot/;
+cp arch/arm/boot/uImage ../../output/kernel/;
 echo "------Finished------"

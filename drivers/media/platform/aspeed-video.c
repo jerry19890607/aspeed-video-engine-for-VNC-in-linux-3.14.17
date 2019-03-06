@@ -35,6 +35,35 @@
 #define DEVICE_NAME			"aspeed-video"
 #define DRV_VERSION 		"0.00"
 
+/* Defines for Video Interrupt Control Register */
+#define IRQ_WATCHDOG_OUT_OF_LOCK     (1<<0)
+#define IRQ_CAPTURE_COMPLETE         (1<<1)
+#define IRQ_COMPRESSION_PACKET_READY (1<<2)
+#define IRQ_COMPRESSION_COMPLETE     (1<<3)
+#define IRQ_MODE_DETECTION_READY     (1<<4)
+#define IRQ_FRAME_COMPLETE           (1<<5)
+#define ALL_IRQ_ENABLE_BITS (IRQ_WATCHDOG_OUT_OF_LOCK |  \
+        IRQ_CAPTURE_COMPLETE | \
+        IRQ_COMPRESSION_PACKET_READY | \
+        IRQ_COMPRESSION_COMPLETE | \
+        IRQ_MODE_DETECTION_READY | \
+        IRQ_FRAME_COMPLETE)
+
+
+/* Defines for Video Interrupt Status Register */
+#define STATUS_WATCHDOG_OUT_OF_LOCK     (1<<0)
+#define STATUS_CAPTURE_COMPLETE         (1<<1)
+#define STATUS_COMPRESSION_PACKET_READY (1<<2)
+#define STATUS_COMPRESSION_COMPLETE     (1<<3)
+#define STATUS_MODE_DETECTION_READY     (1<<4)
+#define STATUS_FRAME_COMPLETE           (1<<5)
+#define ALL_IRQ_STATUS_BITS (STATUS_WATCHDOG_OUT_OF_LOCK |  \
+        STATUS_CAPTURE_COMPLETE | \
+        STATUS_COMPRESSION_PACKET_READY | \
+        STATUS_COMPRESSION_COMPLETE | \
+        STATUS_MODE_DETECTION_READY | \
+        STATUS_FRAME_COMPLETE)
+
 #define ASPEED_VIDEO_JPEG_NUM_QUALITIES	12
 #define ASPEED_VIDEO_JPEG_HEADER_SIZE	10
 #define ASPEED_VIDEO_JPEG_QUANT_SIZE	116
@@ -393,6 +422,8 @@ static void aspeed_video_update(struct aspeed_video *video, u32 reg,
 	writel(t, video->base + reg);
 	dev_dbg(video->dev, "update %03x[%08x -> %08x]\n", reg, before,
 		readl(video->base + reg));
+//	printk("update %03x[%08x -> %08x]\n", reg, before,
+//		readl(video->base + reg));
 }
 
 static u32 aspeed_video_read(struct aspeed_video *video, u32 reg)
@@ -400,6 +431,7 @@ static u32 aspeed_video_read(struct aspeed_video *video, u32 reg)
 	u32 t = readl(video->base + reg);
 
 	dev_dbg(video->dev, "read %03x[%08x]\n", reg, t);
+	//printk("read %03x[%08x]\n", reg, t);
 	return t;
 }
 
@@ -408,6 +440,8 @@ static void aspeed_video_write(struct aspeed_video *video, u32 reg, u32 val)
 	writel(val, video->base + reg);
 	dev_dbg(video->dev, "write %03x[%08x]\n", reg,
 		readl(video->base + reg));
+//	printk("write %03x[%08x]\n", reg,
+//		readl(video->base + reg));
 }
 
 static bool aspeed_video_engine_busy(struct aspeed_video *video)
@@ -428,20 +462,27 @@ static int aspeed_video_start_frame(struct aspeed_video *video)
 	dma_addr_t addr;
 	unsigned long flags;
 	struct aspeed_video_buffer *buf;
+	//u32 reg;
 
-	if (aspeed_video_engine_busy(video))
+	printk("jerry aspeed_video_start_frame\n");
+
+	if (aspeed_video_engine_busy(video)){
+		printk("jerry error\n");
 		return -EBUSY;
+	}
 
 	spin_lock_irqsave(&video->lock, flags);
 	buf = list_first_entry_or_null(&video->buffers,
 				       struct aspeed_video_buffer, link);
 	if (!buf) {
 		spin_unlock_irqrestore(&video->lock, flags);
+		printk("jerry error\n");
 		return -EPROTO;
 	}
 
 	set_bit(VIDEO_FRAME_INPRG, &video->flags);
 	addr = vb2_dma_contig_plane_dma_addr(&buf->vb.vb2_buf, 0);
+	printk("jerry addr: 0x%X\n",addr);
 	spin_unlock_irqrestore(&video->lock, flags);
 
 	aspeed_video_write(video, VE_COMP_PROC_OFFSET, 0);
@@ -454,6 +495,9 @@ static int aspeed_video_start_frame(struct aspeed_video *video)
 
 	aspeed_video_update(video, VE_SEQ_CTRL, 0xffffffff,
 			    VE_SEQ_CTRL_TRIG_CAPTURE | VE_SEQ_CTRL_TRIG_COMP);
+
+	//reg = aspeed_video_read(video, VE_SEQ_CTRL);  //004
+	//reg = aspeed_video_read(video, VE_INTERRUPT_CTRL); //304
 
 	return 0;
 }
@@ -525,7 +569,7 @@ static irqreturn_t aspeed_video_irq(int irq, void *arg)
 {
 	struct aspeed_video *video = arg;
 	u32 sts = aspeed_video_read(video, VE_INTERRUPT_STATUS);
-	printk("jerry 1e70 reg: 0x%X\n",sts);
+	printk("jerry 1e70 VR308 reg: 0x%X\n",sts);
 
 	if (atomic_read(&video->clients) == 0) {
 		dev_info(video->dev, "irq with no client; disabling irqs\n");
@@ -536,7 +580,7 @@ static irqreturn_t aspeed_video_irq(int irq, void *arg)
 	}
 
 	/* Resolution changed; reset entire engine and reinitialize */
-	if (sts & VE_INTERRUPT_MODE_DETECT_WD) {
+	if (sts & VE_INTERRUPT_MODE_DETECT_WD) { //bit 0
 		dev_info(video->dev, "resolution changed; resetting\n");
 		set_bit(VIDEO_RES_CHANGE, &video->flags);
 		clear_bit(VIDEO_FRAME_INPRG, &video->flags);
@@ -549,7 +593,7 @@ static irqreturn_t aspeed_video_irq(int irq, void *arg)
 		return IRQ_HANDLED;
 	}
 
-	if (sts & VE_INTERRUPT_MODE_DETECT) {
+	if (sts & VE_INTERRUPT_MODE_DETECT) { // bit 4
 		aspeed_video_update(video, VE_INTERRUPT_CTRL,
 				    ~VE_INTERRUPT_MODE_DETECT, 0);
 		aspeed_video_write(video, VE_INTERRUPT_STATUS,
@@ -559,8 +603,8 @@ static irqreturn_t aspeed_video_irq(int irq, void *arg)
 		wake_up_interruptible_all(&video->wait);
 	}
 
-	if ((sts & VE_INTERRUPT_COMP_COMPLETE) &&
-	    (sts & VE_INTERRUPT_CAPTURE_COMPLETE)) {
+	if ((sts & VE_INTERRUPT_COMP_COMPLETE) && // bit 3
+	    (sts & VE_INTERRUPT_CAPTURE_COMPLETE)) { // bit 5
 		struct aspeed_video_buffer *buf;
 		u32 frame_size = aspeed_video_read(video,
 						   VE_OFFSET_COMP_STREAM);
@@ -574,7 +618,7 @@ static irqreturn_t aspeed_video_irq(int irq, void *arg)
 			vb2_set_plane_payload(&buf->vb.vb2_buf, 0, frame_size);
 
 			if (!list_is_last(&buf->link, &video->buffers)) {
-				//buf->vb.vb2_buf.timestamp = ktime_get_ns();
+				buf->vb.vb2_buf.timestamp = ktime_to_ns(ktime_get());
 				buf->vb.sequence = video->sequence++;
 				buf->vb.field = V4L2_FIELD_NONE;
 				vb2_buffer_done(&buf->vb.vb2_buf,
@@ -947,6 +991,8 @@ static int aspeed_video_querycap(struct file *file, void *fh,
 	strlcpy(cap->card, "Aspeed Video Engine", sizeof(cap->card));
 	snprintf(cap->bus_info, sizeof(cap->bus_info), "platform:%s",
 		 DEVICE_NAME);
+	cap->capabilities = V4L2_CAP_VIDEO_CAPTURE | V4L2_CAP_READWRITE;
+	printk("aspeed_video_querycap\n");
 
 	return 0;
 }
@@ -1616,6 +1662,7 @@ static int aspeed_video_probe(struct platform_device *pdev)
 	int rc;
 	struct resource *res;
 	struct aspeed_video *video = kzalloc(sizeof(*video), GFP_KERNEL);
+	uint32_t reg;
 
 	
 	printk("--jerry aspeed_video_probe--\n");
@@ -1629,6 +1676,49 @@ static int aspeed_video_probe(struct platform_device *pdev)
 	INIT_DELAYED_WORK(&video->res_work, aspeed_video_resolution_work);
 	INIT_LIST_HEAD(&video->buffers);
 
+#if 1
+	/* --hw reset-- */
+    iowrite32(0x1688A8A8, (void * __iomem)SCU_KEY_CONTROL_REG); /* unlock SCU */
+
+#define SCU_CLK_VIDEO_SLOW_MASK     (0x7 << 28)
+#define SCU_ECLK_SOURCE_MASK        (0x3 << 2)
+    reg = ioread32((void * __iomem)SCU_CLK_SELECT_REG);
+    // Enable Clock & ECLK = inverse of (M-PLL / 2)
+    reg &= ~(SCU_ECLK_SOURCE_MASK | SCU_CLK_VIDEO_SLOW_MASK);
+    iowrite32(reg, (void * __iomem)SCU_CLK_SELECT_REG);
+
+    /* enable reset video engine */
+    reg = ioread32((void * __iomem)SCU_SYS_RESET_REG);
+    reg |= 0x00000040;
+    iowrite32(reg, (void * __iomem)SCU_SYS_RESET_REG);
+
+    udelay(100);
+
+    /* enable video engine clock */
+    reg = ioread32((void * __iomem)SCU_CLK_STOP_REG);
+    reg &= ~(0x0000002B);
+    iowrite32(reg, (void * __iomem)SCU_CLK_STOP_REG);
+
+    wmb();
+
+    mdelay(10);
+
+    /* disable reset video engine */
+    reg = ioread32((void * __iomem)SCU_SYS_RESET_REG);
+    reg &= ~(0x00000040);
+    iowrite32(reg, (void * __iomem)SCU_SYS_RESET_REG);
+
+    #if defined(SOC_AST2300) || defined(SOC_AST2400) || defined(SOC_AST2500) || defined(SOC_AST2530)
+    /* support wide screen resolution */
+    reg = ioread32((void * __iomem)SCU_SOC_SCRATCH1_REG);
+    reg |= (0x00000001);
+    iowrite32(reg, (void * __iomem)SCU_SOC_SCRATCH1_REG);
+    #endif
+
+    iowrite32(0, (void * __iomem)SCU_KEY_CONTROL_REG); /* lock SCU */
+	/* --hw reset-- */
+
+#endif
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 
