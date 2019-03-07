@@ -1912,7 +1912,7 @@ int vb2_mmap(struct vb2_queue *q, struct vm_area_struct *vma)
 	unsigned long length;
 
 	if (q->memory != VB2_MEMORY_MMAP) {
-		dprintk(1, "queue is not currently set up for mmap\n");
+		printk("1 queue is not currently set up for mmap\n");
 		return -EINVAL;
 	}
 
@@ -1920,22 +1920,22 @@ int vb2_mmap(struct vb2_queue *q, struct vm_area_struct *vma)
 	 * Check memory area access mode.
 	 */
 	if (!(vma->vm_flags & VM_SHARED)) {
-		dprintk(1, "invalid vma flags, VM_SHARED needed\n");
+		printk("1 invalid vma flags, VM_SHARED needed\n");
 		return -EINVAL;
 	}
 	if (q->is_output) {
 		if (!(vma->vm_flags & VM_WRITE)) {
-			dprintk(1, "invalid vma flags, VM_WRITE needed\n");
+			printk("1 invalid vma flags, VM_WRITE needed\n");
 			return -EINVAL;
 		}
 	} else {
 		if (!(vma->vm_flags & VM_READ)) {
-			dprintk(1, "invalid vma flags, VM_READ needed\n");
+			printk("1 invalid vma flags, VM_READ needed\n");
 			return -EINVAL;
 		}
 	}
 	if (vb2_fileio_is_active(q)) {
-		dprintk(1, "mmap: file io in progress\n");
+		printk("1 mmap: file io in progress\n");
 		return -EBUSY;
 	}
 
@@ -1955,8 +1955,7 @@ int vb2_mmap(struct vb2_queue *q, struct vm_area_struct *vma)
 	 */
 	length = PAGE_ALIGN(vb->planes[plane].length);
 	if (length < (vma->vm_end - vma->vm_start)) {
-		dprintk(1,
-			"MMAP invalid, as it would overflow buffer length\n");
+		printk("1 MMAP invalid as it would overflow buffer length\n");
 		return -EINVAL;
 	}
 
@@ -1966,7 +1965,7 @@ int vb2_mmap(struct vb2_queue *q, struct vm_area_struct *vma)
 	if (ret)
 		return ret;
 
-	dprintk(3, "buffer %d, plane %d successfully mapped\n", buffer, plane);
+	printk("3 buffer %d, plane %d successfully mapped\n", buffer, plane);
 	return 0;
 }
 EXPORT_SYMBOL_GPL(vb2_mmap);

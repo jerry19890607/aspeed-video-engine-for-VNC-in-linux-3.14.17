@@ -31,6 +31,7 @@
 #include <media/videobuf2-dma-contig.h>
 #include <media/videobuf2-core.h>
 #include <media/videobuf2-v4l2.h>
+#include <linux/bigphysarea.h>
 
 #define DEVICE_NAME			"aspeed-video"
 #define DRV_VERSION 		"0.00"
@@ -464,7 +465,7 @@ static int aspeed_video_start_frame(struct aspeed_video *video)
 	struct aspeed_video_buffer *buf;
 	//u32 reg;
 
-	printk("jerry aspeed_video_start_frame\n");
+	//printk("jerry aspeed_video_start_frame\n");
 
 	if (aspeed_video_engine_busy(video)){
 		printk("jerry error\n");
@@ -482,7 +483,7 @@ static int aspeed_video_start_frame(struct aspeed_video *video)
 
 	set_bit(VIDEO_FRAME_INPRG, &video->flags);
 	addr = vb2_dma_contig_plane_dma_addr(&buf->vb.vb2_buf, 0);
-	printk("jerry addr: 0x%X\n",addr);
+	//printk("jerry addr: 0x%X\n",addr);
 	spin_unlock_irqrestore(&video->lock, flags);
 
 	aspeed_video_write(video, VE_COMP_PROC_OFFSET, 0);
@@ -569,7 +570,7 @@ static irqreturn_t aspeed_video_irq(int irq, void *arg)
 {
 	struct aspeed_video *video = arg;
 	u32 sts = aspeed_video_read(video, VE_INTERRUPT_STATUS);
-	printk("jerry 1e70 VR308 reg: 0x%X\n",sts);
+	//printk("jerry 1e70 VR308 reg: 0x%X\n",sts);
 
 	if (atomic_read(&video->clients) == 0) {
 		dev_info(video->dev, "irq with no client; disabling irqs\n");
@@ -992,7 +993,7 @@ static int aspeed_video_querycap(struct file *file, void *fh,
 	snprintf(cap->bus_info, sizeof(cap->bus_info), "platform:%s",
 		 DEVICE_NAME);
 	cap->capabilities = V4L2_CAP_VIDEO_CAPTURE | V4L2_CAP_READWRITE;
-	printk("aspeed_video_querycap\n");
+	//printk("aspeed_video_querycap\n");
 
 	return 0;
 }
@@ -1588,6 +1589,9 @@ static int aspeed_video_init(struct aspeed_video *video)
 	int irq;
 	int rc;
 	struct device *dev = video->dev;
+	void *ast_videocap_video_buf_virt_addr;
+	void *ast_videocap_video_buf_phys_addr;
+
 /*
 	irq = irq_of_parse_and_map(dev->of_node, 0);
 	printk("irq: %d\n",irq);
@@ -1597,11 +1601,10 @@ static int aspeed_video_init(struct aspeed_video *video)
 	}
 */
 	irq = 7;
-
-	rc = request_irq(irq, aspeed_video_irq, IRQF_SHARED,
-			      DEVICE_NAME, video);
-	//rc = devm_request_irq(dev, irq, aspeed_video_irq, IRQF_SHARED,
+	//rc = request_irq(irq, aspeed_video_irq, IRQF_SHARED,
 	//		      DEVICE_NAME, video);
+	rc = devm_request_irq(dev, irq, aspeed_video_irq, IRQF_SHARED,
+			      DEVICE_NAME, video);
 	printk("jerry irq: %d, rc: %d\n", irq, rc);
 	if (rc < 0) {
 		dev_err(dev, "Unable to request IRQ %d\n", irq);
@@ -1621,6 +1624,7 @@ static int aspeed_video_init(struct aspeed_video *video)
 		dev_err(dev, "Unable to get VCLK\n");
 		return PTR_ERR(video->vclk);
 	}
+
 /*
 	video->rst = devm_reset_control_get_exclusive(dev, NULL);
 	video->rst = reset_control_get_exclusive(dev, NULL);
@@ -1644,6 +1648,14 @@ static int aspeed_video_init(struct aspeed_video *video)
 		return rc;
 	}
 */
+	ast_videocap_video_buf_virt_addr = bigphysarea_alloc_pages(0x1800000 / 0x1000, 0, GFP_KERNEL);
+	if (ast_videocap_video_buf_virt_addr == NULL) {
+		printk("reserve memory fail\n");
+		return -1;
+    }
+	memset(ast_videocap_video_buf_virt_addr, 0x00, 0x1800000);
+	ast_videocap_video_buf_phys_addr = (void *) virt_to_phys(ast_videocap_video_buf_virt_addr);
+	printk("got physical memory pool(%p virtual/%p bus)\n", (unsigned long*)ast_videocap_video_buf_virt_addr, ast_videocap_video_buf_phys_addr);
 
 	if (!aspeed_video_alloc_buf(video, &video->jpeg,
 				    VE_JPEG_HEADER_SIZE)) {
@@ -1676,8 +1688,7 @@ static int aspeed_video_probe(struct platform_device *pdev)
 	INIT_DELAYED_WORK(&video->res_work, aspeed_video_resolution_work);
 	INIT_LIST_HEAD(&video->buffers);
 
-#if 1
-	/* --hw reset-- */
+	/* ---- hw reset ---- */
     iowrite32(0x1688A8A8, (void * __iomem)SCU_KEY_CONTROL_REG); /* unlock SCU */
 
 #define SCU_CLK_VIDEO_SLOW_MASK     (0x7 << 28)
@@ -1716,9 +1727,8 @@ static int aspeed_video_probe(struct platform_device *pdev)
     #endif
 
     iowrite32(0, (void * __iomem)SCU_KEY_CONTROL_REG); /* lock SCU */
-	/* --hw reset-- */
+	/* ---- hw reset ---- */
 
-#endif
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 
