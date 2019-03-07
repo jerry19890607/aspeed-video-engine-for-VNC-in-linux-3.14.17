@@ -14,6 +14,7 @@
 #define _LINUX_EVENTPOLL_H
 
 #include <uapi/linux/eventpoll.h>
+#include <linux/fs.h>
 
 
 /* Forward declarations to avoid compiler errors */
