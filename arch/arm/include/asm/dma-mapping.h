@@ -211,12 +211,14 @@ static inline void *dma_alloc_attrs(struct device *dev, size_t size,
  */
 extern void arm_dma_free(struct device *dev, size_t size, void *cpu_addr,
 			 dma_addr_t handle, struct dma_attrs *attrs);
+//			 dma_addr_t handle, unsigned long attrs);
 
 #define dma_free_coherent(d, s, c, h) dma_free_attrs(d, s, c, h, NULL)
 
 static inline void dma_free_attrs(struct device *dev, size_t size,
 				     void *cpu_addr, dma_addr_t dma_handle,
 				     struct dma_attrs *attrs)
+//					 unsigned long attrs)
 {
 	struct dma_map_ops *ops = get_dma_ops(dev);
 	BUG_ON(!ops);

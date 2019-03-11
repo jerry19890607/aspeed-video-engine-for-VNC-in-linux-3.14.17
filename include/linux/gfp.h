@@ -14,6 +14,7 @@ struct vm_area_struct;
 #define ___GFP_DMA		0x01u
 #define ___GFP_HIGHMEM		0x02u
 #define ___GFP_DMA32		0x04u
+#define ___GFP_RETRY_MAYFAIL	0x400u
 #define ___GFP_MOVABLE		0x08u
 #define ___GFP_WAIT		0x10u
 #define ___GFP_HIGH		0x20u
@@ -79,6 +80,7 @@ struct vm_area_struct;
 #define __GFP_MEMALLOC	((__force gfp_t)___GFP_MEMALLOC)/* Allow access to emergency reserves */
 #define __GFP_COMP	((__force gfp_t)___GFP_COMP)	/* Add compound page metadata */
 #define __GFP_ZERO	((__force gfp_t)___GFP_ZERO)	/* Return zeroed page on success */
+#define __GFP_RETRY_MAYFAIL	((__force gfp_t)___GFP_RETRY_MAYFAIL)
 #define __GFP_NOMEMALLOC ((__force gfp_t)___GFP_NOMEMALLOC) /* Don't use emergency reserves.
 							 * This takes precedence over the
 							 * __GFP_MEMALLOC flag if both are

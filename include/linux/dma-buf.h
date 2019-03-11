@@ -99,6 +99,8 @@ struct dma_buf_ops {
 	void (*kunmap_atomic)(struct dma_buf *, unsigned long, void *);
 	void *(*kmap)(struct dma_buf *, unsigned long);
 	void (*kunmap)(struct dma_buf *, unsigned long, void *);
+	void *(*map_atomic)(struct dma_buf *, unsigned long);
+	void *(*map)(struct dma_buf *, unsigned long);
 
 	int (*mmap)(struct dma_buf *, struct vm_area_struct *vma);
 
@@ -126,8 +128,21 @@ struct dma_buf {
 	unsigned vmapping_counter;
 	void *vmap_ptr;
 	const char *exp_name;
+	struct module *owner;
 	struct list_head list_node;
 	void *priv;
+	struct reservation_object *resv;
+
+	/* poll support */
+	wait_queue_head_t poll;
+
+	struct dma_buf_poll_cb_t {
+		//struct dma_fence_cb cb;
+		wait_queue_head_t *poll;
+
+		__poll_t active;
+	} cb_excl, cb_shared;
+
 };
 
 /**
@@ -148,6 +163,26 @@ struct dma_buf_attachment {
 	void *priv;
 };
 
+struct dma_buf_export_info {
+	const char *exp_name;
+	struct module *owner;
+	const struct dma_buf_ops *ops;
+	size_t size;
+	int flags;
+	struct reservation_object *resv;
+	void *priv;
+};
+/**
+ * DEFINE_DMA_BUF_EXPORT_INFO - helper macro for exporters
+ * @name: export-info name
+ *
+ * DEFINE_DMA_BUF_EXPORT_INFO macro defines the &struct dma_buf_export_info,
+ * zeroes it out and pre-populates exp_name in it.
+ */
+#define DEFINE_DMA_BUF_EXPORT_INFO(name)	\
+	struct dma_buf_export_info name = { .exp_name = KBUILD_MODNAME, \
+					 .owner = THIS_MODULE }
+
 /**
  * get_dma_buf - convenience wrapper for get_file.
  * @dmabuf:	[in]	pointer to dma_buf
@@ -167,11 +202,7 @@ struct dma_buf_attachment *dma_buf_attach(struct dma_buf *dmabuf,
 void dma_buf_detach(struct dma_buf *dmabuf,
 				struct dma_buf_attachment *dmabuf_attach);
 
-struct dma_buf *dma_buf_export_named(void *priv, const struct dma_buf_ops *ops,
-			       size_t size, int flags, const char *);
-
-#define dma_buf_export(priv, ops, size, flags)	\
-	dma_buf_export_named(priv, ops, size, flags, KBUILD_MODNAME)
+struct dma_buf *dma_buf_export(const struct dma_buf_export_info *exp_info);
 
 int dma_buf_fd(struct dma_buf *dmabuf, int flags);
 struct dma_buf *dma_buf_get(int fd);

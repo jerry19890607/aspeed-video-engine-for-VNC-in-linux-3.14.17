@@ -212,8 +212,10 @@ caddr_t bigphysarea_alloc_pages(int count, int align, int priority)
 	caddr_t aligned_base=0;
 
 	if (init_level < 2)
-		if (init2(priority))
+		if (init2(priority)){
+			printk("jerry %d\n",__LINE__);
 			return 0;
+		}
 	new_range   = NULL;
 	align_range = NULL;
 
@@ -236,8 +238,10 @@ caddr_t bigphysarea_alloc_pages(int count, int align, int priority)
 			break;
 	     range_ptr = &range->next;
 	}
-	if (*range_ptr == NULL)
+	if (*range_ptr == NULL){
+		printk("jerry %d\n",__LINE__);
 		return 0;
+	}
 	range = *range_ptr;
 	/*
 	 * When we have to align, the pages needed for alignment can
@@ -248,14 +252,17 @@ caddr_t bigphysarea_alloc_pages(int count, int align, int priority)
 	 */
 	if (aligned_base - range->base + count * PAGE_SIZE < range->size) {
 		new_range = kmalloc(sizeof(range_t), priority);
-		if (new_range == NULL)
+		if (new_range == NULL){
+			printk("jerry %d\n",__LINE__);
 			return NULL;
+		}
 	}
 	if (aligned_base != range->base) {
 		align_range = kmalloc(sizeof(range_t), priority);
 		if (align_range == NULL) {
 			if (new_range != NULL)
 				kfree(new_range);
+			printk("jerry %d\n",__LINE__);
 			return NULL;
 		}
 		align_range->base = range->base;
@@ -288,6 +295,7 @@ caddr_t bigphysarea_alloc_pages(int count, int align, int priority)
 	new_range->next = used_list;
 	used_list = new_range;
 
+	printk("jerry big new_range->base: 0x%p\n",new_range->base);
 	return new_range->base;
 }
 

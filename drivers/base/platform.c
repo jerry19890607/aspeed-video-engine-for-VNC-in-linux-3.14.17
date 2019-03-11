@@ -601,6 +601,7 @@ int __init_or_module platform_driver_probe(struct platform_driver *drv,
 	/* temporary section violation during probe() */
 	drv->probe = probe;
 	retval = code = platform_driver_register(drv);
+	printk("jerry driver register retval: %d\n",retval);
 
 	/*
 	 * Fixup that section violation, being paranoid about code scanning
@@ -615,8 +616,11 @@ int __init_or_module platform_driver_probe(struct platform_driver *drv,
 	drv->driver.probe = platform_drv_probe_fail;
 	spin_unlock(&drv->driver.bus->p->klist_drivers.k_lock);
 
-	if (code != retval)
+	if (code != retval){
+		printk("jerry fail!!\n\n");
 		platform_driver_unregister(drv);
+	}
+	printk("jerry probe successfully!!\n\n");
 	return retval;
 }
 EXPORT_SYMBOL_GPL(platform_driver_probe);

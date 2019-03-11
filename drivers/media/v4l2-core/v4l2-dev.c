@@ -768,6 +768,7 @@ int __video_register_device(struct video_device *vdev, int type, int nr,
 	int minor_cnt = VIDEO_NUM_DEVICES;
 	const char *name_base;
 
+	printk("[Jerry] video_register_device, nr: %d\n",nr);
 	/* A minor value of -1 marks this video device as never
 	   having been registered */
 	vdev->minor = -1;
