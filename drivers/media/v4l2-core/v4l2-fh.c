@@ -62,13 +62,11 @@ int v4l2_fh_open(struct file *filp)
 	struct video_device *vdev = video_devdata(filp);
 	struct v4l2_fh *fh = kzalloc(sizeof(*fh), GFP_KERNEL);
 
-	printk("jerry [%d] [%s]\n",__LINE__,__func__);
 	filp->private_data = fh;
 	if (fh == NULL)
 		return -ENOMEM;
 	v4l2_fh_init(fh, vdev);
 	v4l2_fh_add(fh);
-	printk("jerry [%d] [%s]\n",__LINE__,__func__);
 	return 0;
 }
 EXPORT_SYMBOL_GPL(v4l2_fh_open);

@@ -22,48 +22,20 @@
 #include <linux/videodev2.h>
 #include <linux/wait.h>
 #include <linux/workqueue.h>
-#include <linux/slab.h>
 #include <media/v4l2-ctrls.h>
 #include <media/v4l2-dev.h>
 #include <media/v4l2-device.h>
 #include <media/v4l2-event.h>
 #include <media/v4l2-ioctl.h>
 #include <media/videobuf2-dma-contig.h>
+
+/* jerry add */
+#include <linux/slab.h>
 #include <media/videobuf2-core.h>
 #include <media/videobuf2-v4l2.h>
 #include <linux/bigphysarea.h>
 
 #define DEVICE_NAME			"aspeed-video"
-#define DRV_VERSION 		"0.00"
-
-/* Defines for Video Interrupt Control Register */
-#define IRQ_WATCHDOG_OUT_OF_LOCK     (1<<0)
-#define IRQ_CAPTURE_COMPLETE         (1<<1)
-#define IRQ_COMPRESSION_PACKET_READY (1<<2)
-#define IRQ_COMPRESSION_COMPLETE     (1<<3)
-#define IRQ_MODE_DETECTION_READY     (1<<4)
-#define IRQ_FRAME_COMPLETE           (1<<5)
-#define ALL_IRQ_ENABLE_BITS (IRQ_WATCHDOG_OUT_OF_LOCK |  \
-        IRQ_CAPTURE_COMPLETE | \
-        IRQ_COMPRESSION_PACKET_READY | \
-        IRQ_COMPRESSION_COMPLETE | \
-        IRQ_MODE_DETECTION_READY | \
-        IRQ_FRAME_COMPLETE)
-
-
-/* Defines for Video Interrupt Status Register */
-#define STATUS_WATCHDOG_OUT_OF_LOCK     (1<<0)
-#define STATUS_CAPTURE_COMPLETE         (1<<1)
-#define STATUS_COMPRESSION_PACKET_READY (1<<2)
-#define STATUS_COMPRESSION_COMPLETE     (1<<3)
-#define STATUS_MODE_DETECTION_READY     (1<<4)
-#define STATUS_FRAME_COMPLETE           (1<<5)
-#define ALL_IRQ_STATUS_BITS (STATUS_WATCHDOG_OUT_OF_LOCK |  \
-        STATUS_CAPTURE_COMPLETE | \
-        STATUS_COMPRESSION_PACKET_READY | \
-        STATUS_COMPRESSION_COMPLETE | \
-        STATUS_MODE_DETECTION_READY | \
-        STATUS_FRAME_COMPLETE)
 
 #define ASPEED_VIDEO_JPEG_NUM_QUALITIES	12
 #define ASPEED_VIDEO_JPEG_HEADER_SIZE	10
@@ -85,7 +57,7 @@
 #define VE_MAX_SRC_BUFFER_SIZE		0x8ca000 /* 1920 * 1200, 32bpp */
 #define VE_JPEG_HEADER_SIZE		0x006000 /* 512 * 12 * 4 */
 
-#define VE_PROTECTION_KEY		0x000
+#define  VE_PROTECTION_KEY		0x000
 #define  VE_PROTECTION_KEY_UNLOCK	0x1a038aa8
 
 #define VE_SEQ_CTRL			0x004
@@ -99,16 +71,12 @@
 #define  VE_SEQ_CTRL_YUV420		BIT(10)
 #define  VE_SEQ_CTRL_COMP_FMT		GENMASK(11, 10)
 #define  VE_SEQ_CTRL_HALT		BIT(12)
+#define  VE_SEQ_CTRL_JPEG_MODE		BIT(13)
 #define  VE_SEQ_CTRL_EN_WATCHDOG_COMP	BIT(14)
 #define  VE_SEQ_CTRL_TRIG_JPG		BIT(15)
 #define  VE_SEQ_CTRL_CAP_BUSY		BIT(16)
 #define  VE_SEQ_CTRL_COMP_BUSY		BIT(18)
 
-#ifdef CONFIG_MACH_ASPEED_G5
-#define  VE_SEQ_CTRL_JPEG_MODE		BIT(13)	/* AST2500 */
-#else
-#define  VE_SEQ_CTRL_JPEG_MODE		BIT(8)	/* AST2400 */
-#endif /* CONFIG_MACH_ASPEED_G5 */
 
 #define VE_CTRL				0x008
 #define  VE_CTRL_HSYNC_POL		BIT(0)
@@ -204,18 +172,6 @@
 #define VE_MEM_RESTRICT_START		0x310
 #define VE_MEM_RESTRICT_END		0x314
 
-/*
-struct vb2_v4l2_buffer {
-	struct vb2_buffer	vb2_buf;
-
-	__u32			flags;
-	__u32			field;
-	struct timeval		timestamp;
-	struct v4l2_timecode	timecode;
-	__u32			sequence;
-};
-*/
-
 enum {
 	VIDEO_MODE_DETECT_DONE,
 	VIDEO_RES_CHANGE,
@@ -263,6 +219,7 @@ struct aspeed_video {
 	unsigned int max_compressed_size;
 	struct aspeed_video_addr srcs[2];
 	struct aspeed_video_addr jpeg;
+	struct aspeed_video_addr reserve_memory;
 
 	bool yuv420;
 	unsigned int frame_rate;
@@ -465,7 +422,7 @@ static int aspeed_video_start_frame(struct aspeed_video *video)
 	struct aspeed_video_buffer *buf;
 	//u32 reg;
 
-	//printk("jerry aspeed_video_start_frame\n");
+	printk("--jerry aspeed_video_start_video--\n");
 
 	if (aspeed_video_engine_busy(video)){
 		printk("jerry error\n");
@@ -488,7 +445,7 @@ static int aspeed_video_start_frame(struct aspeed_video *video)
 
 	aspeed_video_write(video, VE_COMP_PROC_OFFSET, 0);
 	aspeed_video_write(video, VE_COMP_OFFSET, 0);
-	aspeed_video_write(video, VE_COMP_ADDR, addr);
+	aspeed_video_write(video, VE_COMP_ADDR, addr); // compress video stream buffer addr register
 
 	aspeed_video_update(video, VE_INTERRUPT_CTRL, 0xffffffff,
 			    VE_INTERRUPT_COMP_COMPLETE |
@@ -496,9 +453,6 @@ static int aspeed_video_start_frame(struct aspeed_video *video)
 
 	aspeed_video_update(video, VE_SEQ_CTRL, 0xffffffff,
 			    VE_SEQ_CTRL_TRIG_CAPTURE | VE_SEQ_CTRL_TRIG_COMP);
-
-	//reg = aspeed_video_read(video, VE_SEQ_CTRL);  //004
-	//reg = aspeed_video_read(video, VE_INTERRUPT_CTRL); //304
 
 	return 0;
 }
@@ -556,6 +510,7 @@ static void aspeed_video_bufs_done(struct aspeed_video *video,
 	unsigned long flags;
 	struct aspeed_video_buffer *buf;
 
+	printk("jerry [%d] [%s]\n",__LINE__,__func__);
 	spin_lock_irqsave(&video->lock, flags);
 	list_for_each_entry(buf, &video->buffers, link) {
 		if (list_is_last(&buf->link, &video->buffers))
@@ -690,6 +645,7 @@ static bool aspeed_video_alloc_buf(struct aspeed_video *video,
 		return false;
 
 	addr->size = size;
+	printk("jerry addr->virt: 0x%p, addr->size:0x%x\n",&addr->virt,addr->size);
 	return true;
 }
 
@@ -737,8 +693,31 @@ static void aspeed_video_calc_compressed_size(struct aspeed_video *video)
 	aspeed_video_write(video, VE_STREAM_BUF_SIZE,
 			   compression_buffer_size_reg);
 
-	dev_dbg(video->dev, "max compressed size: %x\n",
+	printk("Max compressed size: 0x%x\n",
 		video->max_compressed_size);
+
+	printk("jerry VR004: 0x%X\n",readl(video->base + 0x004));
+	printk("jerry VR008: 0x%X\n",readl(video->base + 0x008));
+	printk("jerry VR00c: 0x%X\n",readl(video->base + 0x00c));
+	printk("jerry VR010: 0x%X\n",readl(video->base + 0x010));
+	printk("jerry VR030: 0x%X\n",readl(video->base + 0x030));
+	printk("jerry VR034: 0x%X\n",readl(video->base + 0x034));
+	printk("jerry VR038: 0x%X\n",readl(video->base + 0x038));
+	printk("jerry VR03C: 0x%X\n",readl(video->base + 0x03C));
+	printk("jerry VR040: 0x%X\n",readl(video->base + 0x040));
+	printk("jerry VR044: 0x%X\n",readl(video->base + 0x044));
+	printk("jerry VR048: 0x%X\n",readl(video->base + 0x048));
+	printk("jerry VR04C: 0x%X\n",readl(video->base + 0x04C));
+	printk("jerry VR054: 0x%X\n",readl(video->base + 0x054));
+	printk("jerry VR058: 0x%X\n",readl(video->base + 0x058));
+	printk("jerry VR060: 0x%X\n",readl(video->base + 0x060));
+	printk("jerry VR078: 0x%X\n",readl(video->base + 0x078));
+	printk("jerry VR090: 0x%X\n",readl(video->base + 0x090));
+	printk("jerry VR094: 0x%X\n",readl(video->base + 0x094));
+	printk("jerry VR098: 0x%X\n",readl(video->base + 0x098));
+	printk("jerry VR304: 0x%X\n",readl(video->base + 0x304));
+	printk("jerry VR308: 0x%X\n",readl(video->base + 0x308));
+	
 }
 
 #define res_check(v) test_and_clear_bit(VIDEO_MODE_DETECT_DONE, &(v)->flags)
@@ -765,12 +744,14 @@ static int aspeed_video_get_resolution(struct aspeed_video *video)
 	} else {
 		if(video->srcs[0].size)
 			aspeed_video_free_buf(video, &video->srcs[0]);
-
+	
+		printk("jerry alloc 9mb[%d] [%s]\n",__LINE__,__func__);
 		if (!aspeed_video_alloc_buf(video, &src,
-					    VE_MAX_SRC_BUFFER_SIZE))
+					    VE_MAX_SRC_BUFFER_SIZE))  //SRC buffer 9mb
 			goto err_mem;
 	}
 
+	printk("jerry src.dma: 0x%08x\n",src.dma);
 	aspeed_video_write(video, VE_SRC0_ADDR, src.dma);
 
 	video->width = 0;
@@ -864,7 +845,7 @@ static int aspeed_video_get_resolution(struct aspeed_video *video)
 	aspeed_video_update(video, VE_SEQ_CTRL, 0xffffffff,
 			    VE_SEQ_CTRL_AUTO_COMP | VE_SEQ_CTRL_EN_WATCHDOG);
 
-	dev_dbg(video->dev, "got resolution[%dx%d]\n", video->width,
+	printk("Resolution [%dx%d]\n", video->width,
 		video->height);
 
 	size *= 4;
@@ -874,6 +855,7 @@ static int aspeed_video_get_resolution(struct aspeed_video *video)
 	} else if (size == src.size) {
 		video->srcs[0] = src;
 
+		printk("jerry [%d] [%s]\n",__LINE__,__func__);
 		if (!aspeed_video_alloc_buf(video, &video->srcs[1], size))
 			goto err_mem;
 
@@ -881,13 +863,17 @@ static int aspeed_video_get_resolution(struct aspeed_video *video)
 	} else {
 		aspeed_video_free_buf(video, &src);
 
+		printk("jerry alloc src0 [%d] [%s]\n",__LINE__,__func__);
 		if (!aspeed_video_alloc_buf(video, &video->srcs[0], size))
 			goto err_mem;
 
+		printk("jerry alloc src1[%d] [%s]\n",__LINE__,__func__);
 		if (!aspeed_video_alloc_buf(video, &video->srcs[1], size))
 			goto err_mem;
 
+		printk("jerry src.dma: 0x%08x\n",video->srcs[0].dma);
 		aspeed_video_write(video, VE_SRC0_ADDR, video->srcs[0].dma);
+		printk("jerry src.dma: 0x%08x\n",video->srcs[1].dma);
 		aspeed_video_write(video, VE_SRC1_ADDR, video->srcs[1].dma);
 	}
 
@@ -929,6 +915,7 @@ static void aspeed_video_init_regs(struct aspeed_video *video)
 	aspeed_video_write(video, VE_COMP_PROC_OFFSET, 0);
 	aspeed_video_write(video, VE_COMP_OFFSET, 0);
 
+	printk("jerry video->jpeg.dma: 0x%08x\n",video->jpeg.dma);
 	aspeed_video_write(video, VE_JPEG_ADDR, video->jpeg.dma);
 
 	/* Set control registers */
@@ -1004,6 +991,7 @@ static int aspeed_video_enum_format(struct file *file, void *fh,
 	if (f->index)
 		return -EINVAL;
 
+	printk("jerry [%d] [%s]\n",__LINE__,__func__);
 	f->pixelformat = V4L2_PIX_FMT_JPEG;
 
 	return 0;
@@ -1014,6 +1002,7 @@ static int aspeed_video_get_format(struct file *file, void *fh,
 {
 	struct aspeed_video *video = video_drvdata(file);
 
+	printk("jerry [%d] [%s]\n",__LINE__,__func__);
 	f->fmt.pix = video->pix_fmt;
 
 	return 0;
@@ -1038,6 +1027,7 @@ static int aspeed_video_get_input(struct file *file, void *fh, unsigned int *i)
 {
 	*i = 0;
 
+	printk("jerry [%d] [%s]\n",__LINE__,__func__);
 	return 0;
 }
 
@@ -1054,6 +1044,7 @@ static int aspeed_video_get_parm(struct file *file, void *fh,
 {
 	struct aspeed_video *video = video_drvdata(file);
 
+	printk("jerry [%d] [%s]\n",__LINE__,__func__);
 	a->parm.capture.capability = V4L2_CAP_TIMEPERFRAME;
 	a->parm.capture.readbuffers = 3;
 	a->parm.capture.timeperframe.numerator = 1;
@@ -1071,6 +1062,7 @@ static int aspeed_video_set_parm(struct file *file, void *fh,
 	unsigned int frame_rate = 0;
 	struct aspeed_video *video = video_drvdata(file);
 
+	printk("jerry [%d] [%s]\n",__LINE__,__func__);
 	a->parm.capture.capability = V4L2_CAP_TIMEPERFRAME;
 	a->parm.capture.readbuffers = 3;
 
@@ -1103,6 +1095,7 @@ static int aspeed_video_enum_framesizes(struct file *file, void *fh,
 {
 	struct aspeed_video *video = video_drvdata(file);
 
+	printk("jerry [%d] [%s]\n",__LINE__,__func__);
 	if (fsize->index)
 		return -EINVAL;
 
@@ -1121,6 +1114,7 @@ static int aspeed_video_enum_frameintervals(struct file *file, void *fh,
 {
 	struct aspeed_video *video = video_drvdata(file);
 
+	printk("jerry [%d] [%s]\n",__LINE__,__func__);
 	if (fival->index)
 		return -EINVAL;
 
@@ -1146,6 +1140,7 @@ static int aspeed_video_set_dv_timings(struct file *file, void *fh,
 {
 	struct aspeed_video *video = video_drvdata(file);
 
+	printk("jerry [%d] [%s]\n",__LINE__,__func__);
 	if (video->width != timings->bt.width ||
 	    video->height != timings->bt.height)
 		return -EINVAL;
@@ -1178,6 +1173,7 @@ static int aspeed_video_query_dv_timings(struct file *file, void *fh,
 	int rc;
 	struct aspeed_video *video = video_drvdata(file);
 
+	printk("jerry [%d] [%s]\n",__LINE__,__func__);
 	if (file->f_flags & O_NONBLOCK) {
 		if (test_bit(VIDEO_RES_CHANGE, &video->flags))
 			return -EAGAIN;
@@ -1200,6 +1196,7 @@ static int aspeed_video_query_dv_timings(struct file *file, void *fh,
 static int aspeed_video_enum_dv_timings(struct file *file, void *fh,
 					struct v4l2_enum_dv_timings *timings)
 {
+	printk("jerry [%d] [%s]\n",__LINE__,__func__);
 	if (timings->index)
 		return -EINVAL;
 
@@ -1211,6 +1208,7 @@ static int aspeed_video_dv_timings_cap(struct file *file, void *fh,
 {
 	struct aspeed_video *video = video_drvdata(file);
 
+	printk("jerry [%d] [%s]\n",__LINE__,__func__);
 	cap->type = V4L2_DV_BT_656_1120;
 	cap->bt.capabilities = V4L2_DV_BT_CAP_PROGRESSIVE;
 	cap->bt.min_width = video->width;
@@ -1224,6 +1222,7 @@ static int aspeed_video_dv_timings_cap(struct file *file, void *fh,
 static int aspeed_video_sub_event(struct v4l2_fh *fh,
 				  const struct v4l2_event_subscription *sub)
 {
+	printk("jerry [%d] [%s]\n",__LINE__,__func__);
 	switch (sub->type) {
 	case V4L2_EVENT_SOURCE_CHANGE:
 		return v4l2_src_change_event_subscribe(fh, sub);
@@ -1346,13 +1345,11 @@ static void aspeed_video_resolution_work(struct work_struct *work)
 
 	if (video->width != video->pix_fmt.width ||
 	    video->height != video->pix_fmt.height) {
-		/*
 		static const struct v4l2_event ev = {
 			.type = V4L2_EVENT_SOURCE_CHANGE,
 			.u.src_change.changes = V4L2_EVENT_SRC_CH_RESOLUTION,
 		};
 		v4l2_event_queue(&video->vdev, &ev);
-		*/
 	}
 
 done:
@@ -1365,6 +1362,7 @@ static int aspeed_video_open(struct file *file)
 	int rc;
 	struct aspeed_video *video = video_drvdata(file);
 
+	printk("jerry [%d] [%s]\n",__LINE__,__func__);
 	mutex_lock(&video->video_lock);
 
 	if (atomic_inc_return(&video->clients) == 1) {
@@ -1387,6 +1385,7 @@ static int aspeed_video_release(struct file *file)
 	int rc;
 	struct aspeed_video *video = video_drvdata(file);
 
+	printk("jerry [%d] [%s]\n",__LINE__,__func__);
 	rc = vb2_fop_release(file);
 
 	mutex_lock(&video->video_lock);
@@ -1417,6 +1416,7 @@ static int aspeed_video_queue_setup(struct vb2_queue *q,
 {
 	struct aspeed_video *video = vb2_get_drv_priv(q);
 
+	printk("jerry [%d] [%s]\n",__LINE__,__func__);
 	if (*num_planes) {
 		if (sizes[0] < video->max_compressed_size)
 			return -EINVAL;
@@ -1434,8 +1434,11 @@ static int aspeed_video_buf_prepare(struct vb2_buffer *vb)
 {
 	struct aspeed_video *video = vb2_get_drv_priv(vb->vb2_queue);
 
-	if (vb2_plane_size(vb, 0) < video->max_compressed_size)
+	printk("jerry [%d] [%s]\n",__LINE__,__func__);
+	if (vb2_plane_size(vb, 0) < video->max_compressed_size){
+		printk("jerry FAIL!!!! [%d] [%s]\n",__LINE__,__func__);
 		return -EINVAL;
+	}
 
 	return 0;
 }
@@ -1446,6 +1449,7 @@ static int aspeed_video_start_streaming(struct vb2_queue *q,
 	int rc;
 	struct aspeed_video *video = vb2_get_drv_priv(q);
 
+	printk("jerry [%d] [%s]\n",__LINE__,__func__);
 	rc = aspeed_video_start_frame(video);
 	if (rc) {
 		aspeed_video_bufs_done(video, VB2_BUF_STATE_QUEUED);
@@ -1462,6 +1466,7 @@ static void aspeed_video_stop_streaming(struct vb2_queue *q)
 	int rc;
 	struct aspeed_video *video = vb2_get_drv_priv(q);
 
+	printk("jerry [%d] [%s]\n",__LINE__,__func__);
 	clear_bit(VIDEO_STREAMING, &video->flags);
 
 	rc = wait_event_timeout(video->wait,
@@ -1482,6 +1487,7 @@ static void aspeed_video_buf_queue(struct vb2_buffer *vb)
 	struct aspeed_video_buffer *avb = to_aspeed_video_buffer(vbuf);
 	unsigned long flags;
 
+	printk("jerry [%d] [%s]\n",__LINE__,__func__);
 	spin_lock_irqsave(&video->lock, flags);
 	list_add_tail(&avb->link, &video->buffers);
 	spin_unlock_irqrestore(&video->lock, flags);
@@ -1591,6 +1597,7 @@ static int aspeed_video_init(struct aspeed_video *video)
 	struct device *dev = video->dev;
 	void *ast_videocap_video_buf_virt_addr;
 	void *ast_videocap_video_buf_phys_addr;
+	//struct aspeed_video_addr *addr;
 
 /*
 	irq = irq_of_parse_and_map(dev->of_node, 0);
@@ -1611,6 +1618,7 @@ static int aspeed_video_init(struct aspeed_video *video)
 		return rc;
 	}
 
+/*
 	video->eclk = clk_get(dev, "eclk");
 	//video->eclk = devm_clk_get(dev, "eclk");
 	if (IS_ERR(video->eclk)) {
@@ -1625,7 +1633,6 @@ static int aspeed_video_init(struct aspeed_video *video)
 		return PTR_ERR(video->vclk);
 	}
 
-/*
 	video->rst = devm_reset_control_get_exclusive(dev, NULL);
 	video->rst = reset_control_get_exclusive(dev, NULL);
 	video->rst = reset_control_get(dev, NULL);
@@ -1640,14 +1647,21 @@ static int aspeed_video_init(struct aspeed_video *video)
 		dev_err(dev, "Unable to reserve memory\n");
 		return rc;
 	}
+*/
 
-	rc = dma_set_mask_and_coherent(dev, DMA_BIT_MASK(32));
+	//rc = dma_set_mask_and_coherent(dev, DMA_BIT_MASK(32));
+	rc = dma_set_coherent_mask(dev, DMA_BIT_MASK(32));
 	if (rc) {
 		dev_err(dev, "Failed to set DMA mask\n");
 		of_reserved_mem_device_release(dev);
 		return rc;
 	}
-*/
+
+	printk("jerry dev->dma_mask: 0x%p\n",dev->dma_mask);
+	printk("jerry dev->coherent_dma_mask: 0x%llx\n",dev->coherent_dma_mask);
+	printk("jerry dev->dma_parms: 0x%p\n",dev->dma_parms);
+	printk("jerry dev->dma_mem: 0x%p\n",dev->dma_mem);
+
 	ast_videocap_video_buf_virt_addr = bigphysarea_alloc_pages(0x1800000 / 0x1000, 0, GFP_KERNEL);
 	if (ast_videocap_video_buf_virt_addr == NULL) {
 		printk("reserve memory fail\n");
@@ -1655,12 +1669,22 @@ static int aspeed_video_init(struct aspeed_video *video)
     }
 	memset(ast_videocap_video_buf_virt_addr, 0x00, 0x1800000);
 	ast_videocap_video_buf_phys_addr = (void *) virt_to_phys(ast_videocap_video_buf_virt_addr);
-	printk("got physical memory pool(%p virtual/%p bus)\n", (unsigned long*)ast_videocap_video_buf_virt_addr, ast_videocap_video_buf_phys_addr);
+	printk("got physical memory pool(%p virtual/%p phy)\n", (unsigned long*)ast_videocap_video_buf_virt_addr, ast_videocap_video_buf_phys_addr);
 
+	//addr->virt = dma_alloc_coherent(video->dev, 0x01000000, &addr->dma,	GFP_KERNEL);
+
+/*
+	if (!aspeed_video_alloc_buf(video, &video->reserve_memory, 0x04000000)) {
+		dev_err(dev, "Failed to allocate DMA for reserve memory\n");
+		//of_reserved_mem_device_release(dev);
+		return rc;
+	}
+*/
+	printk("jerry alloc JPEG header [%d] [%s]\n",__LINE__,__func__);
 	if (!aspeed_video_alloc_buf(video, &video->jpeg,
 				    VE_JPEG_HEADER_SIZE)) {
 		dev_err(dev, "Failed to allocate DMA for JPEG header\n");
-		of_reserved_mem_device_release(dev);
+		//of_reserved_mem_device_release(dev);
 		return rc;
 	}
 
@@ -1698,6 +1722,7 @@ static int aspeed_video_probe(struct platform_device *pdev)
     reg &= ~(SCU_ECLK_SOURCE_MASK | SCU_CLK_VIDEO_SLOW_MASK);
     iowrite32(reg, (void * __iomem)SCU_CLK_SELECT_REG);
 
+	printk("jerry [%d] [%s]\n",__LINE__,__func__);
     /* enable reset video engine */
     reg = ioread32((void * __iomem)SCU_SYS_RESET_REG);
     reg |= 0x00000040;
@@ -1736,7 +1761,7 @@ static int aspeed_video_probe(struct platform_device *pdev)
 	printk("jerry video->base: 0x%p\n",video->base);
 	if (IS_ERR(video->base))
 		return PTR_ERR(video->base);
-	
+
 	printk("--jerry aspeed_video_init--\n");
 	rc = aspeed_video_init(video);
 	if (rc)
@@ -1812,16 +1837,13 @@ static struct platform_device ast_video_device =
 {
     .name       = DEVICE_NAME,
 	.id			= -1,
-	.dev        = {
-					.coherent_dma_mask  = 0xffffffff,
-	},
     .resource   = ast_video_resources,
     .num_resources = ARRAY_SIZE(ast_video_resources),
 };
 
 static int __init ast_video_init(void)
 {
-	printk("\n\n[jerry] AST video engine Driver : Ver %s\n",DRV_VERSION);
+	printk("\n\n[jerry] AST video engine Driver\n");
     platform_device_register(&ast_video_device);
 	platform_driver_probe(&aspeed_video_driver, aspeed_video_probe);
 	return 0;
