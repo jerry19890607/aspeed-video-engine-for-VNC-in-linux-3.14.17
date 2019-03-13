@@ -32,7 +32,6 @@
 #include <linux/slab.h>
 #include <media/videobuf2-core.h>
 #include <media/videobuf2-v4l2.h>
-#include <linux/bigphysarea.h>
 
 #define DEVICE_NAME			"aspeed-video"
 #define VIDEO_ENGINE_IRQ	7
