@@ -48,9 +48,10 @@
 #define MIN_WIDTH			640
 
 #define NUM_POLARITY_CHECKS		10
+//#define NUM_POLARITY_CHECKS		20
 #define INVALID_RESOLUTION_RETRIES	2
 #define INVALID_RESOLUTION_DELAY	msecs_to_jiffies(250)
-#define RESOLUTION_CHANGE_DELAY		msecs_to_jiffies(5000)
+#define RESOLUTION_CHANGE_DELAY		msecs_to_jiffies(2000)
 #define MODE_DETECT_TIMEOUT		msecs_to_jiffies(500)
 #define STOP_TIMEOUT			msecs_to_jiffies(1000)
 #define DIRECT_FETCH_THRESHOLD		0x0c0000 /* 1024 * 768 */
@@ -411,8 +412,8 @@ static void aspeed_video_update(struct aspeed_video *video, u32 reg, u32 clear,
 	writel(t, video->base + reg);
 	dev_dbg(video->dev, "update %03x[%08x -> %08x]\n", reg, before,
 		readl(video->base + reg));
-	printk("update %03x[%08x -> %08x]\n", reg, before,
-		readl(video->base + reg));
+//	printk("update %03x[%08x -> %08x]\n", reg, before,
+//		readl(video->base + reg));
 }
 
 static u32 aspeed_video_read(struct aspeed_video *video, u32 reg)
@@ -420,7 +421,7 @@ static u32 aspeed_video_read(struct aspeed_video *video, u32 reg)
 	u32 t = readl(video->base + reg);
 
 	dev_dbg(video->dev, "read %03x[%08x]\n", reg, t);
-	printk("read %03x[%08x]\n", reg, t);
+//	printk("read %03x[%08x]\n", reg, t);
 	return t;
 }
 
@@ -429,8 +430,8 @@ static void aspeed_video_write(struct aspeed_video *video, u32 reg, u32 val)
 	writel(val, video->base + reg);
 	dev_dbg(video->dev, "write %03x[%08x]\n", reg,
 		readl(video->base + reg));
-	printk("write %03x[%08x]\n", reg,
-		readl(video->base + reg));
+//	printk("write %03x[%08x]\n", reg,
+//		readl(video->base + reg));
 }
 
 static int aspeed_video_start_frame(struct aspeed_video *video)
@@ -439,7 +440,7 @@ static int aspeed_video_start_frame(struct aspeed_video *video)
 	unsigned long flags;
 	struct aspeed_video_buffer *buf;
 	u32 seq_ctrl = aspeed_video_read(video, VE_SEQ_CTRL);
-	printk("jerry ---start frame--- \n");
+//	printk("\n---start frame--- \n");
 
 	if (video->v4l2_input_status) {
 		dev_dbg(video->dev, "No signal; don't start frame\n");
@@ -475,8 +476,12 @@ static int aspeed_video_start_frame(struct aspeed_video *video)
 
 	aspeed_video_update(video, VE_SEQ_CTRL, 0,
 			    VE_SEQ_CTRL_TRIG_CAPTURE | VE_SEQ_CTRL_TRIG_COMP);
-
-	printk("jerry ---start frame done--- \n");
+/*
+	printk("VR004: 0x%X\n",aspeed_video_read(video, VE_SEQ_CTRL));
+	printk("VR008: 0x%X\n",aspeed_video_read(video, VE_CTRL));
+	printk("VR304: 0x%X\n",aspeed_video_read(video, VE_INTERRUPT_CTRL));
+	printk("VR308: 0x%X\n",aspeed_video_read(video, VE_INTERRUPT_STATUS));
+	printk("---start frame done--- \n");*/
 	return 0;
 }
 
@@ -487,6 +492,9 @@ static void aspeed_video_enable_mode_detect(struct aspeed_video *video)
 			    VE_INTERRUPT_MODE_DETECT);
 
 	/* Trigger mode detect */
+	aspeed_video_update(video, VE_SEQ_CTRL, VE_SEQ_CTRL_TRIG_MODE_DET, 0);
+	wmb();
+	udelay(100);
 	aspeed_video_update(video, VE_SEQ_CTRL, 0, VE_SEQ_CTRL_TRIG_MODE_DET);
 }
 
@@ -553,7 +561,7 @@ static irqreturn_t aspeed_video_irq(int irq, void *arg)
 	struct aspeed_video *video = arg;
 	u32 sts;
 
-	printk("\n--video irq--\n");
+//	printk("\n--video irq--\n");
 	sts = aspeed_video_read(video, VE_INTERRUPT_STATUS);
 
 	/*
@@ -593,7 +601,7 @@ static irqreturn_t aspeed_video_irq(int irq, void *arg)
 		struct aspeed_video_buffer *buf;
 		u32 frame_size = aspeed_video_read(video,
 						   VE_OFFSET_COMP_STREAM);
-		printk("jerry [%d] [%s]\n",__LINE__,__func__);
+//		printk("jerry [%d] [%s]\n",__LINE__,__func__);
 
 		spin_lock(&video->lock);
 		clear_bit(VIDEO_FRAME_INPRG, &video->flags);
@@ -626,7 +634,7 @@ static irqreturn_t aspeed_video_irq(int irq, void *arg)
 				   VE_INTERRUPT_CAPTURE_COMPLETE);
 
 		if (test_bit(VIDEO_STREAMING, &video->flags) && buf){
-			printk("jerry [%d] [%s]\n",__LINE__,__func__);
+//			printk("jerry [%d] [%s]\n",__LINE__,__func__);
 			aspeed_video_start_frame(video);
 		}
 	}
@@ -740,7 +748,7 @@ static void aspeed_video_calc_compressed_size(struct aspeed_video *video,
 	aspeed_video_write(video, VE_STREAM_BUF_SIZE,
 			   compression_buffer_size_reg);
 
-	dev_dbg(video->dev, "Max compressed size: %x\n",
+	printk("Max compressed size: %x\n",
 		video->max_compressed_size);
 }
 
@@ -897,6 +905,7 @@ static void aspeed_video_set_resolution(struct aspeed_video *video)
 	} else {
 		printk("jerry direct mode!!!!\n");
 		aspeed_video_update(video, VE_CTRL, 0, VE_CTRL_DIRECT_FETCH);
+		aspeed_video_update(video, VE_CTRL, 0, VE_CTRL_HSYNC_POL | VE_CTRL_VSYNC_POL);
 	}
 
 	/* Set capture/compression frame sizes */
@@ -907,6 +916,10 @@ static void aspeed_video_set_resolution(struct aspeed_video *video)
 	aspeed_video_write(video, VE_SRC_SCANLINE_OFFSET, act->width * 4);
 
 	size *= 4;
+
+	printk("size: %d\n",size);
+	printk("video->srcs[0].size: %d\n",video->srcs[0].size);
+	printk("video->srcs[1].size: %d\n",video->srcs[1].size);
 
 	if (size == video->srcs[0].size / 2) {
 		aspeed_video_write(video, VE_SRC1_ADDR,
@@ -924,7 +937,6 @@ static void aspeed_video_set_resolution(struct aspeed_video *video)
 
 		if (!aspeed_video_alloc_buf(video, &video->srcs[1], size))
 			goto err_mem;
-
 		aspeed_video_write(video, VE_SRC0_ADDR, video->srcs[0].dma);
 		aspeed_video_write(video, VE_SRC1_ADDR, video->srcs[1].dma);
 	}
@@ -936,6 +948,9 @@ err_mem:
 
 	if (video->srcs[0].size)
 		aspeed_video_free_buf(video, &video->srcs[0]);
+	if (video->srcs[1].size)
+		aspeed_video_free_buf(video, &video->srcs[1]);
+
 }
 
 static void aspeed_video_init_regs(struct aspeed_video *video)
@@ -978,7 +993,8 @@ static void aspeed_video_init_regs(struct aspeed_video *video)
 	aspeed_video_write(video, VE_SCALING_FILTER3, 0x00200000);
 
 	/* Set mode detection defaults */
-	aspeed_video_write(video, VE_MODE_DETECT, 0x22666500);
+//	aspeed_video_write(video, VE_MODE_DETECT, 0x22666500);
+	aspeed_video_write(video, VE_MODE_DETECT, 0x44446500);
 }
 
 static void aspeed_video_start(struct aspeed_video *video)
@@ -1353,6 +1369,8 @@ static void aspeed_video_resolution_work(struct work_struct *work)
 	struct aspeed_video *video = container_of(dwork, struct aspeed_video,
 						  res_work);
 	u32 input_status = video->v4l2_input_status;
+	struct v4l2_bt_timings *act = &video->active_timings;
+	u32 rc;
 
 	aspeed_video_on(video);
 
@@ -1364,7 +1382,14 @@ static void aspeed_video_resolution_work(struct work_struct *work)
 
 	aspeed_video_get_resolution(video);
 
-	printk("jerry input_status: 0x%x,  video->v4l2_input_status:0x%x\n",input_status,video->v4l2_input_status);
+	printk("act resolution %dx%d\n",act->width,act->height);
+	/* Set timings since the device is being opened for the first time */
+	video->active_timings = video->detected_timings;
+	aspeed_video_set_resolution(video);
+
+	rc = aspeed_video_read(video, VE_CTRL);
+	printk("VR008: 0x%X\n",rc);
+	
 	if (video->detected_timings.width != video->active_timings.width ||
 	    video->detected_timings.height != video->active_timings.height ||
 	    input_status != video->v4l2_input_status) {
