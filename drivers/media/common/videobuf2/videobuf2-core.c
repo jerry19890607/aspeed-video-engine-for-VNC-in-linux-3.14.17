@@ -976,7 +976,7 @@ static int __prepare_mmap(struct vb2_buffer *vb, const void *pb)
 	if (pb)
 		ret = call_bufop(vb->vb2_queue, fill_vb2_buffer,
 				 vb, pb, vb->planes);
-	return ret ? ret : call_vb_qop(vb, buf_prepare, vb);
+	return ret;
 }
 
 /*
