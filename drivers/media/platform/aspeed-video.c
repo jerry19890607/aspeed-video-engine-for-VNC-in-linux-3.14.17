@@ -48,10 +48,9 @@
 #define MIN_WIDTH			640
 
 #define NUM_POLARITY_CHECKS		10
-//#define NUM_POLARITY_CHECKS		20
 #define INVALID_RESOLUTION_RETRIES	2
 #define INVALID_RESOLUTION_DELAY	msecs_to_jiffies(250)
-#define RESOLUTION_CHANGE_DELAY		msecs_to_jiffies(2000)
+#define RESOLUTION_CHANGE_DELAY		msecs_to_jiffies(500)
 #define MODE_DETECT_TIMEOUT		msecs_to_jiffies(500)
 #define STOP_TIMEOUT			msecs_to_jiffies(1000)
 #define DIRECT_FETCH_THRESHOLD		0x0c0000 /* 1024 * 768 */
@@ -412,8 +411,6 @@ static void aspeed_video_update(struct aspeed_video *video, u32 reg, u32 clear,
 	writel(t, video->base + reg);
 	dev_dbg(video->dev, "update %03x[%08x -> %08x]\n", reg, before,
 		readl(video->base + reg));
-//	printk("update %03x[%08x -> %08x]\n", reg, before,
-//		readl(video->base + reg));
 }
 
 static u32 aspeed_video_read(struct aspeed_video *video, u32 reg)
@@ -421,7 +418,6 @@ static u32 aspeed_video_read(struct aspeed_video *video, u32 reg)
 	u32 t = readl(video->base + reg);
 
 	dev_dbg(video->dev, "read %03x[%08x]\n", reg, t);
-//	printk("read %03x[%08x]\n", reg, t);
 	return t;
 }
 
@@ -430,8 +426,6 @@ static void aspeed_video_write(struct aspeed_video *video, u32 reg, u32 val)
 	writel(val, video->base + reg);
 	dev_dbg(video->dev, "write %03x[%08x]\n", reg,
 		readl(video->base + reg));
-//	printk("write %03x[%08x]\n", reg,
-//		readl(video->base + reg));
 }
 
 static int aspeed_video_start_frame(struct aspeed_video *video)
@@ -440,7 +434,6 @@ static int aspeed_video_start_frame(struct aspeed_video *video)
 	unsigned long flags;
 	struct aspeed_video_buffer *buf;
 	u32 seq_ctrl = aspeed_video_read(video, VE_SEQ_CTRL);
-//	printk("\n---start frame--- \n");
 
 	if (video->v4l2_input_status) {
 		dev_dbg(video->dev, "No signal; don't start frame\n");
@@ -476,12 +469,7 @@ static int aspeed_video_start_frame(struct aspeed_video *video)
 
 	aspeed_video_update(video, VE_SEQ_CTRL, 0,
 			    VE_SEQ_CTRL_TRIG_CAPTURE | VE_SEQ_CTRL_TRIG_COMP);
-/*
-	printk("VR004: 0x%X\n",aspeed_video_read(video, VE_SEQ_CTRL));
-	printk("VR008: 0x%X\n",aspeed_video_read(video, VE_CTRL));
-	printk("VR304: 0x%X\n",aspeed_video_read(video, VE_INTERRUPT_CTRL));
-	printk("VR308: 0x%X\n",aspeed_video_read(video, VE_INTERRUPT_STATUS));
-	printk("---start frame done--- \n");*/
+
 	return 0;
 }
 
@@ -561,7 +549,6 @@ static irqreturn_t aspeed_video_irq(int irq, void *arg)
 	struct aspeed_video *video = arg;
 	u32 sts;
 
-//	printk("\n--video irq--\n");
 	sts = aspeed_video_read(video, VE_INTERRUPT_STATUS);
 
 	/*
@@ -569,15 +556,12 @@ static irqreturn_t aspeed_video_irq(int irq, void *arg)
 	 * re-initialize
 	 */
 	if (sts & VE_INTERRUPT_MODE_DETECT_WD) {
-		printk("jerry [%d] [%s]\n",__LINE__,__func__);
 		aspeed_video_irq_res_change(video);
 		return IRQ_HANDLED;
 	}
 
 	if (sts & VE_INTERRUPT_MODE_DETECT) {
-		printk("jerry [%d] [%s]\n",__LINE__,__func__);
 		if (test_bit(VIDEO_RES_DETECT, &video->flags)) {
-			printk("jerry [%d] [%s]\n",__LINE__,__func__);
 			aspeed_video_update(video, VE_INTERRUPT_CTRL,
 					    VE_INTERRUPT_MODE_DETECT, 0);
 			aspeed_video_write(video, VE_INTERRUPT_STATUS,
@@ -586,7 +570,6 @@ static irqreturn_t aspeed_video_irq(int irq, void *arg)
 			set_bit(VIDEO_MODE_DETECT_DONE, &video->flags);
 			wake_up_interruptible_all(&video->wait);
 		} else {
-			printk("jerry [%d] [%s]\n",__LINE__,__func__);
 			/*
 			 * Signal acquired while NOT doing resolution
 			 * detection; reset the engine and re-initialize
@@ -601,7 +584,6 @@ static irqreturn_t aspeed_video_irq(int irq, void *arg)
 		struct aspeed_video_buffer *buf;
 		u32 frame_size = aspeed_video_read(video,
 						   VE_OFFSET_COMP_STREAM);
-//		printk("jerry [%d] [%s]\n",__LINE__,__func__);
 
 		spin_lock(&video->lock);
 		clear_bit(VIDEO_FRAME_INPRG, &video->flags);
@@ -634,7 +616,6 @@ static irqreturn_t aspeed_video_irq(int irq, void *arg)
 				   VE_INTERRUPT_CAPTURE_COMPLETE);
 
 		if (test_bit(VIDEO_STREAMING, &video->flags) && buf){
-//			printk("jerry [%d] [%s]\n",__LINE__,__func__);
 			aspeed_video_start_frame(video);
 		}
 	}
@@ -666,23 +647,19 @@ static void aspeed_video_check_and_set_polarity(struct aspeed_video *video)
 		u32 ctrl;
 
 		if (hsync_counter < 0) {
-			printk("jerry [%d] [%s]\n",__LINE__,__func__);
 			ctrl |= VE_CTRL_HSYNC_POL;
 			video->detected_timings.polarities &=
 				~V4L2_DV_HSYNC_POS_POL;
 		} else {
-			printk("jerry [%d] [%s]\n",__LINE__,__func__);
 			video->detected_timings.polarities |=
 				V4L2_DV_HSYNC_POS_POL;
 		}
 
 		if (vsync_counter < 0) {
-			printk("jerry [%d] [%s]\n",__LINE__,__func__);
 			ctrl |= VE_CTRL_VSYNC_POL;
 			video->detected_timings.polarities &=
 				~V4L2_DV_VSYNC_POS_POL;
 		} else {
-			printk("jerry [%d] [%s]\n",__LINE__,__func__);
 			video->detected_timings.polarities |=
 				V4L2_DV_VSYNC_POS_POL;
 		}
@@ -748,13 +725,13 @@ static void aspeed_video_calc_compressed_size(struct aspeed_video *video,
 	aspeed_video_write(video, VE_STREAM_BUF_SIZE,
 			   compression_buffer_size_reg);
 
-	printk("Max compressed size: %x\n",
-		video->max_compressed_size);
+//	printk("Max compressed size: %x\n",
+//		video->max_compressed_size);
 }
 
 #define res_check(v) test_and_clear_bit(VIDEO_MODE_DETECT_DONE, &(v)->flags)
 
-static void aspeed_video_get_resolution(struct aspeed_video *video)
+static int aspeed_video_get_resolution(struct aspeed_video *video)
 {
 	bool invalid_resolution = true;
 	int rc;
@@ -784,7 +761,7 @@ static void aspeed_video_get_resolution(struct aspeed_video *video)
 					    VE_MAX_SRC_BUFFER_SIZE)) {
 			dev_err(video->dev,
 				"Failed to allocate source buffers\n");
-			return;
+			return -1;
 		}
 	}
 
@@ -794,13 +771,11 @@ static void aspeed_video_get_resolution(struct aspeed_video *video)
 		if (tries) {
 			set_current_state(TASK_INTERRUPTIBLE);
 			if (schedule_timeout(INVALID_RESOLUTION_DELAY))
-				return;
+				return -1;
 		}
 
 		set_bit(VIDEO_RES_DETECT, &video->flags);
-		printk("1st detect\n");
 		aspeed_video_enable_mode_detect(video);
-		printk("end\n");
 
 		rc = wait_event_interruptible_timeout(video->wait,
 						      res_check(video),
@@ -808,7 +783,7 @@ static void aspeed_video_get_resolution(struct aspeed_video *video)
 		if (!rc) {
 			dev_err(video->dev, "Timed out; first mode detect\n");
 			clear_bit(VIDEO_RES_DETECT, &video->flags);
-			return;
+			return -1;
 		}
 
 		/* Disable mode detect in order to re-trigger */
@@ -817,9 +792,7 @@ static void aspeed_video_get_resolution(struct aspeed_video *video)
 
 		aspeed_video_check_and_set_polarity(video);
 
-		printk("2nd detect\n");
 		aspeed_video_enable_mode_detect(video);
-		printk("end\n");
 
 		rc = wait_event_interruptible_timeout(video->wait,
 						      res_check(video),
@@ -827,7 +800,7 @@ static void aspeed_video_get_resolution(struct aspeed_video *video)
 		clear_bit(VIDEO_RES_DETECT, &video->flags);
 		if (!rc) {
 			dev_err(video->dev, "Timed out; second mode detect\n");
-			return;
+			return -1;
 		}
 
 		src_lr_edge = aspeed_video_read(video, VE_SRC_LR_EDGE_DET);
@@ -861,7 +834,7 @@ static void aspeed_video_get_resolution(struct aspeed_video *video)
 
 	if (invalid_resolution) {
 		dev_err(video->dev, "Invalid resolution detected\n");
-		return;
+		return -1;
 	}
 
 	det->height = (video->frame_bottom - video->frame_top) + 1;
@@ -877,12 +850,14 @@ static void aspeed_video_get_resolution(struct aspeed_video *video)
 	aspeed_video_update(video, VE_SEQ_CTRL, 0,
 			    VE_SEQ_CTRL_AUTO_COMP | VE_SEQ_CTRL_EN_WATCHDOG);
 
-	printk("Got resolution: %dx%d\n", det->width,
-		det->height);
+	printk("\nResolution: [%dx%d]\n\n", det->width,det->height);
+
 	clear_bit(VIDEO_MODE_DETECT_DONE, &video->flags);
+
+	return 0;
 }
 
-static void aspeed_video_set_resolution(struct aspeed_video *video)
+static int aspeed_video_set_resolution(struct aspeed_video *video)
 {
 	struct v4l2_bt_timings *act = &video->active_timings;
 	unsigned int size = act->width * act->height;
@@ -891,7 +866,6 @@ static void aspeed_video_set_resolution(struct aspeed_video *video)
 
 	/* Don't use direct mode below 1024 x 768 (irqs don't fire) */
 	if (size <= DIRECT_FETCH_THRESHOLD) {
-		printk("jerry not direct mode!!!!\n");
 		aspeed_video_write(video, VE_TGS_0,
 				   FIELD_PREP(VE_TGS_FIRST,
 					      video->frame_left - 1) |
@@ -903,7 +877,6 @@ static void aspeed_video_set_resolution(struct aspeed_video *video)
 					      video->frame_bottom + 1));
 		aspeed_video_update(video, VE_CTRL, 0, VE_CTRL_INT_DE);
 	} else {
-		printk("jerry direct mode!!!!\n");
 		aspeed_video_update(video, VE_CTRL, 0, VE_CTRL_DIRECT_FETCH);
 		aspeed_video_update(video, VE_CTRL, 0, VE_CTRL_HSYNC_POL | VE_CTRL_VSYNC_POL);
 	}
@@ -916,10 +889,6 @@ static void aspeed_video_set_resolution(struct aspeed_video *video)
 	aspeed_video_write(video, VE_SRC_SCANLINE_OFFSET, act->width * 4);
 
 	size *= 4;
-
-	printk("size: %d\n",size);
-	printk("video->srcs[0].size: %d\n",video->srcs[0].size);
-	printk("video->srcs[1].size: %d\n",video->srcs[1].size);
 
 	if (size == video->srcs[0].size / 2) {
 		aspeed_video_write(video, VE_SRC1_ADDR,
@@ -941,7 +910,7 @@ static void aspeed_video_set_resolution(struct aspeed_video *video)
 		aspeed_video_write(video, VE_SRC1_ADDR, video->srcs[1].dma);
 	}
 
-	return;
+	return 0;
 
 err_mem:
 	dev_err(video->dev, "Failed to allocate source buffers\n");
@@ -950,6 +919,7 @@ err_mem:
 		aspeed_video_free_buf(video, &video->srcs[0]);
 	if (video->srcs[1].size)
 		aspeed_video_free_buf(video, &video->srcs[1]);
+	return -1;
 
 }
 
@@ -993,8 +963,7 @@ static void aspeed_video_init_regs(struct aspeed_video *video)
 	aspeed_video_write(video, VE_SCALING_FILTER3, 0x00200000);
 
 	/* Set mode detection defaults */
-//	aspeed_video_write(video, VE_MODE_DETECT, 0x22666500);
-	aspeed_video_write(video, VE_MODE_DETECT, 0x44446500);
+	aspeed_video_write(video, VE_MODE_DETECT, 0x22666500);
 }
 
 static void aspeed_video_start(struct aspeed_video *video)
@@ -1084,7 +1053,6 @@ static int aspeed_video_enum_input(struct file *file, void *fh,
 static int aspeed_video_get_input(struct file *file, void *fh, unsigned int *i)
 {
 	*i = 0;
-
 	return 0;
 }
 
@@ -1188,6 +1156,7 @@ static int aspeed_video_set_dv_timings(struct file *file, void *fh,
 				       struct v4l2_dv_timings *timings)
 {
 	struct aspeed_video *video = video_drvdata(file);
+	int rc;
 
 	if (timings->bt.width == video->active_timings.width &&
 	    timings->bt.height == video->active_timings.height)
@@ -1198,7 +1167,11 @@ static int aspeed_video_set_dv_timings(struct file *file, void *fh,
 
 	video->active_timings = timings->bt;
 
-	aspeed_video_set_resolution(video);
+	rc = aspeed_video_set_resolution(video);
+	if(rc){
+		printk("Set resoulutin FAIL!!\n");
+		return -1;
+	}
 
 	video->pix_fmt.width = timings->bt.width;
 	video->pix_fmt.height = timings->bt.height;
@@ -1213,7 +1186,6 @@ static int aspeed_video_get_dv_timings(struct file *file, void *fh,
 				       struct v4l2_dv_timings *timings)
 {
 	struct aspeed_video *video = video_drvdata(file);
-
 	timings->type = V4L2_DV_BT_656_1120;
 	timings->bt = video->active_timings;
 
@@ -1225,7 +1197,6 @@ static int aspeed_video_query_dv_timings(struct file *file, void *fh,
 {
 	int rc;
 	struct aspeed_video *video = video_drvdata(file);
-
 	/*
 	 * This blocks only if the driver is currently in the process of
 	 * detecting a new resolution; in the event of no signal or timeout
@@ -1369,8 +1340,7 @@ static void aspeed_video_resolution_work(struct work_struct *work)
 	struct aspeed_video *video = container_of(dwork, struct aspeed_video,
 						  res_work);
 	u32 input_status = video->v4l2_input_status;
-	struct v4l2_bt_timings *act = &video->active_timings;
-	u32 rc;
+	int rc;
 
 	aspeed_video_on(video);
 
@@ -1378,17 +1348,36 @@ static void aspeed_video_resolution_work(struct work_struct *work)
 	if (test_bit(VIDEO_STOPPED, &video->flags))
 		goto done;
 
+	mutex_lock(&video->video_lock);
+
 	aspeed_video_init_regs(video);
 
-	aspeed_video_get_resolution(video);
+	rc = aspeed_video_get_resolution(video);
+	if(rc){
+		printk("Get resoulutin FAIL!!\n");
+		goto done;
+	}
 
-	printk("act resolution %dx%d\n",act->width,act->height);
+#if 1
 	/* Set timings since the device is being opened for the first time */
 	video->active_timings = video->detected_timings;
-	aspeed_video_set_resolution(video);
 
-	rc = aspeed_video_read(video, VE_CTRL);
-	printk("VR008: 0x%X\n",rc);
+	rc = aspeed_video_set_resolution(video);
+	if(rc){
+		printk("Set resoulutin FAIL!!\n");
+		goto done;
+	}
+
+	video->pix_fmt.width = video->active_timings.width;
+	video->pix_fmt.height = video->active_timings.height;
+	video->pix_fmt.sizeimage = video->max_compressed_size;
+
+
+	mutex_unlock(&video->video_lock);	
+
+	printk("VR004: 0x%X\n",aspeed_video_read(video, VE_SEQ_CTRL));
+	printk("VR008: 0x%X\n",aspeed_video_read(video, VE_CTRL));
+#endif 	
 	
 	if (video->detected_timings.width != video->active_timings.width ||
 	    video->detected_timings.height != video->active_timings.height ||
@@ -1398,11 +1387,8 @@ static void aspeed_video_resolution_work(struct work_struct *work)
 			.u.src_change.changes = V4L2_EVENT_SRC_CH_RESOLUTION,
 		};
 
-		printk("jerry [%d] [%s]\n",__LINE__,__func__);
 		v4l2_event_queue(&video->vdev, &ev);
 	} else if (test_bit(VIDEO_STREAMING, &video->flags)) {
-		// No resolution change so just restart streaming 
-		printk("jerry [%d] [%s]\n",__LINE__,__func__);
 		aspeed_video_start_frame(video);
 	}
 
@@ -1553,7 +1539,6 @@ static void aspeed_video_buf_queue(struct vb2_buffer *vb)
 	    !test_bit(VIDEO_FRAME_INPRG, &video->flags) && 
 		test_bit(VIDEO_MODE_DETECT_DONE, &video->flags) &&
 		!test_bit(VIDEO_RES_DETECT, &video->flags) && empty){
-		printk("jerry [%d] [%s]\n",__LINE__,__func__);
 		aspeed_video_start_frame(video);
 	}
 }
