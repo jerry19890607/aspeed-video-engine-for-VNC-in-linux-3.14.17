@@ -33,8 +33,11 @@
 #include <linux/slab.h>
 #include <media/videobuf2-core.h>
 #include <media/videobuf2-v4l2.h>
+
 #define DEVICE_NAME			"aspeed-video"
 #define VIDEO_ENGINE_IRQ	7
+
+#define AST_VIDEOCAP_REG_SIZE		SZ_128K
 
 #define ASPEED_VIDEO_JPEG_NUM_QUALITIES	12
 #define ASPEED_VIDEO_JPEG_HEADER_SIZE	10
@@ -69,9 +72,9 @@
 #define  VE_SEQ_CTRL_TRIG_COMP		BIT(4)
 #define  VE_SEQ_CTRL_AUTO_COMP		BIT(5)
 #define  VE_SEQ_CTRL_EN_WATCHDOG	BIT(7)
-#define  VE_SEQ_CTRL_YUV420		BIT(10)
+#define  VE_SEQ_CTRL_YUV420			BIT(10)
 #define  VE_SEQ_CTRL_COMP_FMT		GENMASK(11, 10)
-#define  VE_SEQ_CTRL_HALT		BIT(12)
+#define  VE_SEQ_CTRL_HALT			BIT(12)
 #define  VE_SEQ_CTRL_JPEG_MODE		BIT(13)
 #define  VE_SEQ_CTRL_EN_WATCHDOG_COMP	BIT(14)
 #define  VE_SEQ_CTRL_TRIG_JPG		BIT(15)
@@ -84,12 +87,12 @@
 #define  VE_CTRL_VSYNC_POL		BIT(1)
 #define  VE_CTRL_SOURCE			BIT(2)
 #define  VE_CTRL_INT_DE			BIT(4)
-#define  VE_CTRL_DIRECT_FETCH		BIT(5)
+#define  VE_CTRL_DIRECT_FETCH	BIT(5)
 #define  VE_CTRL_YUV			BIT(6)
 #define  VE_CTRL_RGB			BIT(7)
-#define  VE_CTRL_CAPTURE_FMT		GENMASK(7, 6)
+#define  VE_CTRL_CAPTURE_FMT	GENMASK(7, 6)
 #define  VE_CTRL_AUTO_OR_CURSOR		BIT(8)
-#define  VE_CTRL_CLK_INVERSE		BIT(11)
+#define  VE_CTRL_CLK_INVERSE	BIT(11)
 #define  VE_CTRL_CLK_DELAY		GENMASK(11, 9)
 #define  VE_CTRL_INTERLACE		BIT(14)
 #define  VE_CTRL_HSYNC_POL_CTRL		BIT(15)
@@ -539,7 +542,7 @@ static void aspeed_video_irq_res_change(struct aspeed_video *video)
 
 	schedule_delayed_work(&video->res_work, RESOLUTION_CHANGE_DELAY);
 
-	printk("\njerry clear WD!!\n");
+//	printk("\njerry clear WD!!\n");
 	aspeed_video_write(video, VE_INTERRUPT_CTRL, 0);
 	aspeed_video_write(video, VE_INTERRUPT_STATUS, 0xffffffff);
 }
@@ -767,6 +770,11 @@ static int aspeed_video_get_resolution(struct aspeed_video *video)
 
 	aspeed_video_write(video, VE_SRC0_ADDR, video->srcs[0].dma);
 
+#if 1
+	//reset to 0 before mode detect hw
+	aspeed_video_update(video, VE_CTRL, VE_CTRL_HSYNC_POL | VE_CTRL_VSYNC_POL, 0);
+#endif
+
 	do {
 		if (tries) {
 			set_current_state(TASK_INTERRUPTIBLE);
@@ -878,7 +886,7 @@ static int aspeed_video_set_resolution(struct aspeed_video *video)
 		aspeed_video_update(video, VE_CTRL, 0, VE_CTRL_INT_DE);
 	} else {
 		aspeed_video_update(video, VE_CTRL, 0, VE_CTRL_DIRECT_FETCH);
-		aspeed_video_update(video, VE_CTRL, 0, VE_CTRL_HSYNC_POL | VE_CTRL_VSYNC_POL);
+		//aspeed_video_update(video, VE_CTRL, 0, VE_CTRL_HSYNC_POL | VE_CTRL_VSYNC_POL);
 	}
 
 	/* Set capture/compression frame sizes */
@@ -1334,6 +1342,48 @@ static const struct v4l2_ctrl_ops aspeed_video_ctrl_ops = {
 	.s_ctrl = aspeed_video_set_ctrl,
 };
 
+void ast_videocap_reset_hw(void)
+{
+	uint32_t reg;
+	
+    iowrite32(0x1688A8A8, (void * __iomem)SCU_KEY_CONTROL_REG); /* unlock SCU */
+
+#define SCU_CLK_VIDEO_SLOW_MASK     (0x7 << 28)
+#define SCU_ECLK_SOURCE_MASK        (0x3 << 2)
+    reg = ioread32((void * __iomem)SCU_CLK_SELECT_REG);
+    // Enable Clock & ECLK = inverse of (M-PLL / 2)
+    reg &= ~(SCU_ECLK_SOURCE_MASK | SCU_CLK_VIDEO_SLOW_MASK);
+    iowrite32(reg, (void * __iomem)SCU_CLK_SELECT_REG);
+
+    /* enable reset video engine */
+    reg = ioread32((void * __iomem)SCU_SYS_RESET_REG);
+    reg |= 0x00000040;
+    iowrite32(reg, (void * __iomem)SCU_SYS_RESET_REG);
+
+    udelay(100);
+
+    /* enable video engine clock */
+    reg = ioread32((void * __iomem)SCU_CLK_STOP_REG);
+    reg &= ~(0x0000002B);
+    iowrite32(reg, (void * __iomem)SCU_CLK_STOP_REG);
+
+    wmb();
+
+    mdelay(10);
+
+    /* disable reset video engine */
+    reg = ioread32((void * __iomem)SCU_SYS_RESET_REG);
+    reg &= ~(0x00000040);
+    iowrite32(reg, (void * __iomem)SCU_SYS_RESET_REG);
+
+    /* support wide screen resolution */
+    reg = ioread32((void * __iomem)SCU_SOC_SCRATCH1_REG);
+    reg |= (0x00000001);
+    iowrite32(reg, (void * __iomem)SCU_SOC_SCRATCH1_REG);
+
+    iowrite32(0, (void * __iomem)SCU_KEY_CONTROL_REG); /* lock SCU */
+}
+
 static void aspeed_video_resolution_work(struct work_struct *work)
 {
 	struct delayed_work *dwork = to_delayed_work(work);
@@ -1341,6 +1391,8 @@ static void aspeed_video_resolution_work(struct work_struct *work)
 						  res_work);
 	u32 input_status = video->v4l2_input_status;
 	int rc;
+
+	ast_videocap_reset_hw();
 
 	aspeed_video_on(video);
 
@@ -1389,6 +1441,7 @@ static void aspeed_video_resolution_work(struct work_struct *work)
 
 		v4l2_event_queue(&video->vdev, &ev);
 	} else if (test_bit(VIDEO_STREAMING, &video->flags)) {
+	//	msleep(500);
 		aspeed_video_start_frame(video);
 	}
 
@@ -1483,14 +1536,14 @@ static int aspeed_video_start_streaming(struct vb2_queue *q,
 	struct aspeed_video *video = vb2_get_drv_priv(q);
 
 	video->sequence = 0;
-
+	
 	rc = aspeed_video_start_frame(video);
 	if (rc) {
 		aspeed_video_bufs_done(video, VB2_BUF_STATE_QUEUED);
 		return rc;
 	}
 
-	printk("jerry set VIDEO_STREAMING [%d] [%s]\n",__LINE__,__func__);
+//	printk("jerry set VIDEO_STREAMING [%d] [%s]\n",__LINE__,__func__);
 	set_bit(VIDEO_STREAMING, &video->flags);
 	return 0;
 }
@@ -1500,7 +1553,7 @@ static void aspeed_video_stop_streaming(struct vb2_queue *q)
 	int rc;
 	struct aspeed_video *video = vb2_get_drv_priv(q);
 
-	printk("jerry clear VIDEO_STREAMING [%d] [%s]\n",__LINE__,__func__);
+//	printk("jerry clear VIDEO_STREAMING [%d] [%s]\n",__LINE__,__func__);
 	clear_bit(VIDEO_STREAMING, &video->flags);
 
 	rc = wait_event_timeout(video->wait,
@@ -1671,54 +1724,10 @@ static int aspeed_video_init(struct aspeed_video *video)
 	return 0;
 }
 
-void ast_videocap_reset_hw(void)
-{
-	uint32_t reg;
-	
-    iowrite32(0x1688A8A8, (void * __iomem)SCU_KEY_CONTROL_REG); /* unlock SCU */
-
-#define SCU_CLK_VIDEO_SLOW_MASK     (0x7 << 28)
-#define SCU_ECLK_SOURCE_MASK        (0x3 << 2)
-    reg = ioread32((void * __iomem)SCU_CLK_SELECT_REG);
-    // Enable Clock & ECLK = inverse of (M-PLL / 2)
-    reg &= ~(SCU_ECLK_SOURCE_MASK | SCU_CLK_VIDEO_SLOW_MASK);
-    iowrite32(reg, (void * __iomem)SCU_CLK_SELECT_REG);
-
-    /* enable reset video engine */
-    reg = ioread32((void * __iomem)SCU_SYS_RESET_REG);
-    reg |= 0x00000040;
-    iowrite32(reg, (void * __iomem)SCU_SYS_RESET_REG);
-
-    udelay(100);
-
-    /* enable video engine clock */
-    reg = ioread32((void * __iomem)SCU_CLK_STOP_REG);
-    reg &= ~(0x0000002B);
-    iowrite32(reg, (void * __iomem)SCU_CLK_STOP_REG);
-
-    wmb();
-
-    mdelay(10);
-
-    /* disable reset video engine */
-    reg = ioread32((void * __iomem)SCU_SYS_RESET_REG);
-    reg &= ~(0x00000040);
-    iowrite32(reg, (void * __iomem)SCU_SYS_RESET_REG);
-
-    #if defined(SOC_AST2300) || defined(SOC_AST2400) || defined(SOC_AST2500) || defined(SOC_AST2530)
-    /* support wide screen resolution */
-    reg = ioread32((void * __iomem)SCU_SOC_SCRATCH1_REG);
-    reg |= (0x00000001);
-    iowrite32(reg, (void * __iomem)SCU_SOC_SCRATCH1_REG);
-    #endif
-
-    iowrite32(0, (void * __iomem)SCU_KEY_CONTROL_REG); /* lock SCU */
-}
 
 static int aspeed_video_probe(struct platform_device *pdev)
 {
 	int rc;
-	struct resource *res;
 	struct aspeed_video *video = kzalloc(sizeof(*video), GFP_KERNEL);
 
 	if (!video)
@@ -1734,12 +1743,27 @@ static int aspeed_video_probe(struct platform_device *pdev)
 
 	ast_videocap_reset_hw();
 
+/*
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 
 	video->base = devm_ioremap_resource(video->dev, res);
 
 	if (IS_ERR(video->base))
 		return PTR_ERR(video->base);
+*/
+
+	if (request_mem_region(AST_VIDEO_BASE, AST_VIDEOCAP_REG_SIZE, DEVICE_NAME) == NULL) {
+		printk(KERN_WARNING "%s: request memory region failed\n", DEVICE_NAME);
+		rc = -EBUSY;
+		return PTR_ERR(video->base);
+	}
+
+	video->base = ioremap(AST_VIDEO_BASE, AST_VIDEOCAP_REG_SIZE);
+	if (video->base == NULL) {
+		printk(KERN_WARNING "%s: ioremap failed\n", DEVICE_NAME);
+		rc = -ENOMEM;
+		return PTR_ERR(video->base);
+	}
 
 	rc = aspeed_video_init(video);
 	if (rc)
@@ -1758,6 +1782,8 @@ static int aspeed_video_remove(struct platform_device *pdev)
 	struct v4l2_device *v4l2_dev = dev_get_drvdata(dev);
 	struct aspeed_video *video = to_aspeed_video(v4l2_dev);
 
+	printk("AST VNC video engine Driver Remove\n");
+
 	video_unregister_device(&video->vdev);
 
 	vb2_core_queue_release(&video->queue);
@@ -1770,6 +1796,8 @@ static int aspeed_video_remove(struct platform_device *pdev)
 			  video->jpeg.dma);
 
 	of_reserved_mem_device_release(dev);
+
+	release_mem_region(AST_VIDEO_BASE, AST_VIDEOCAP_REG_SIZE);
 
 	return 0;
 }
@@ -1784,6 +1812,7 @@ static struct platform_driver aspeed_video_driver = {
 	.remove = aspeed_video_remove,
 };
 
+/*
 static struct resource ast_video_resources[] =
 {
 	[0] = {
@@ -1805,18 +1834,51 @@ static struct platform_device ast_video_device =
     .resource   = ast_video_resources,
     .num_resources = ARRAY_SIZE(ast_video_resources),
 };
+*/
+
+static struct platform_device *ast_video_device;
 
 static int __init ast_video_init(void)
 {
+	int ret;
+
 	printk("AST video engine Driver\n");
-    platform_device_register(&ast_video_device);
-	platform_driver_probe(&aspeed_video_driver, aspeed_video_probe);
-	return 0;
+
+	ast_video_device = platform_device_alloc(DEVICE_NAME, 0);
+	if (!ast_video_device) {
+		pr_err("%s(#%d): platform_device_alloc fail\n",
+			__func__, __LINE__);
+		return -ENOMEM;
+	}
+
+	ret = platform_device_add(ast_video_device);
+	if (ret) {
+		pr_err("%s(#%d): platform_device_add failed\n",
+			__func__, __LINE__);
+		goto dev_add_failed;
+	}
+
+	ret = platform_driver_register(&aspeed_video_driver);
+	if (ret) {
+		dev_err(&(ast_video_device->dev), "%s(#%d): platform_driver_register fail(%d)\n",
+			__func__, __LINE__, ret);
+		goto dev_reg_failed;
+	}
+
+	return ret;
+
+dev_add_failed:
+	platform_device_put(ast_video_device);
+dev_reg_failed:
+	platform_device_unregister(ast_video_device);
+
+	return ret;
 }
 
 static void __exit ast_video_exit(void)
 {
-    platform_device_unregister(&ast_video_device);
+	printk("AST VNC video engine Driver Exit\n");
+	platform_device_unregister(ast_video_device);
 	platform_driver_unregister(&aspeed_video_driver);
 }
 
