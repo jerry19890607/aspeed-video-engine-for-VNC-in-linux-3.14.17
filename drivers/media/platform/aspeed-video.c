@@ -54,7 +54,7 @@
 #define INVALID_RESOLUTION_RETRIES	2
 #define INVALID_RESOLUTION_DELAY	msecs_to_jiffies(250)
 #define RESOLUTION_CHANGE_DELAY		msecs_to_jiffies(500)
-#define MODE_DETECT_TIMEOUT		msecs_to_jiffies(500)
+#define MODE_DETECT_TIMEOUT		msecs_to_jiffies(2000)
 #define STOP_TIMEOUT			msecs_to_jiffies(1000)
 #define DIRECT_FETCH_THRESHOLD		0x0c0000 /* 1024 * 768 */
 
@@ -542,7 +542,6 @@ static void aspeed_video_irq_res_change(struct aspeed_video *video)
 
 	schedule_delayed_work(&video->res_work, RESOLUTION_CHANGE_DELAY);
 
-//	printk("\njerry clear WD!!\n");
 	aspeed_video_write(video, VE_INTERRUPT_CTRL, 0);
 	aspeed_video_write(video, VE_INTERRUPT_STATUS, 0xffffffff);
 }
@@ -550,9 +549,7 @@ static void aspeed_video_irq_res_change(struct aspeed_video *video)
 static irqreturn_t aspeed_video_irq(int irq, void *arg)
 {
 	struct aspeed_video *video = arg;
-	u32 sts;
-
-	sts = aspeed_video_read(video, VE_INTERRUPT_STATUS);
+	u32 sts = aspeed_video_read(video, VE_INTERRUPT_STATUS);
 
 	/*
 	 * Resolution changed or signal was lost; reset the engine and
@@ -608,19 +605,18 @@ static irqreturn_t aspeed_video_irq(int irq, void *arg)
 		spin_unlock(&video->lock);
 
 		aspeed_video_update(video, VE_SEQ_CTRL,
-					VE_SEQ_CTRL_TRIG_CAPTURE |
-					VE_SEQ_CTRL_FORCE_IDLE |
-					VE_SEQ_CTRL_TRIG_COMP, 0);
+				VE_SEQ_CTRL_TRIG_CAPTURE |
+				VE_SEQ_CTRL_FORCE_IDLE |
+				VE_SEQ_CTRL_TRIG_COMP, 0);
 		aspeed_video_update(video, VE_INTERRUPT_CTRL,
-					VE_INTERRUPT_COMP_COMPLETE |
-					VE_INTERRUPT_CAPTURE_COMPLETE, 0);
+				VE_INTERRUPT_COMP_COMPLETE |
+				VE_INTERRUPT_CAPTURE_COMPLETE, 0);
 		aspeed_video_write(video, VE_INTERRUPT_STATUS,
 				   VE_INTERRUPT_COMP_COMPLETE |
 				   VE_INTERRUPT_CAPTURE_COMPLETE);
 
-		if (test_bit(VIDEO_STREAMING, &video->flags) && buf){
+		if (test_bit(VIDEO_STREAMING, &video->flags) && buf)
 			aspeed_video_start_frame(video);
-		}
 	}
 
 	return IRQ_HANDLED;
@@ -728,8 +724,8 @@ static void aspeed_video_calc_compressed_size(struct aspeed_video *video,
 	aspeed_video_write(video, VE_STREAM_BUF_SIZE,
 			   compression_buffer_size_reg);
 
-//	printk("Max compressed size: %x\n",
-//		video->max_compressed_size);
+	dev_dbg(video->dev, "Max compressed size: %x\n",
+		video->max_compressed_size);
 }
 
 #define res_check(v) test_and_clear_bit(VIDEO_MODE_DETECT_DONE, &(v)->flags)
@@ -770,10 +766,8 @@ static int aspeed_video_get_resolution(struct aspeed_video *video)
 
 	aspeed_video_write(video, VE_SRC0_ADDR, video->srcs[0].dma);
 
-#if 1
 	//reset to 0 before mode detect hw
 	aspeed_video_update(video, VE_CTRL, VE_CTRL_HSYNC_POL | VE_CTRL_VSYNC_POL, 0);
-#endif
 
 	do {
 		if (tries) {
@@ -824,8 +818,12 @@ static int aspeed_video_get_resolution(struct aspeed_video *video)
 			VE_MODE_DETECT_V_LINES_SHF) - video->frame_bottom;
 		det->vsync = (sync & VE_SYNC_STATUS_VSYNC) >>
 			VE_SYNC_STATUS_VSYNC_SHF;
-		if (video->frame_top > video->frame_bottom)
-			continue;
+		if (video->frame_top > video->frame_bottom){
+			video->frame_top = 0;
+			video->frame_bottom = 599;
+			//continue;
+		}
+
 
 		video->frame_right = (src_lr_edge & VE_SRC_LR_EDGE_DET_RT) >>
 			VE_SRC_LR_EDGE_DET_RT_SHF;
@@ -834,11 +832,16 @@ static int aspeed_video_get_resolution(struct aspeed_video *video)
 		det->hbackporch = (mds & VE_MODE_DETECT_H_PIXELS) -
 			video->frame_right;
 		det->hsync = sync & VE_SYNC_STATUS_HSYNC;
-		if (video->frame_left > video->frame_right)
-			continue;
+		if (video->frame_left > video->frame_right){
+			video->frame_left = 0;
+			video->frame_right = 799;
+		//	continue;
+		}
 
 		invalid_resolution = false;
 	} while (invalid_resolution && (tries++ < INVALID_RESOLUTION_RETRIES));
+
+	video->v4l2_input_status = 0;
 
 	if (invalid_resolution) {
 		dev_err(video->dev, "Invalid resolution detected\n");
@@ -847,7 +850,6 @@ static int aspeed_video_get_resolution(struct aspeed_video *video)
 
 	det->height = (video->frame_bottom - video->frame_top) + 1;
 	det->width = (video->frame_right - video->frame_left) + 1;
-	video->v4l2_input_status = 0;
 
 	/*
 	 * Enable mode-detect watchdog, resolution-change watchdog and
@@ -873,7 +875,7 @@ static int aspeed_video_set_resolution(struct aspeed_video *video)
 	aspeed_video_calc_compressed_size(video, size);
 
 	/* Don't use direct mode below 1024 x 768 (irqs don't fire) */
-	if (size <= DIRECT_FETCH_THRESHOLD) {
+	if (size < DIRECT_FETCH_THRESHOLD) {
 		aspeed_video_write(video, VE_TGS_0,
 				   FIELD_PREP(VE_TGS_FIRST,
 					      video->frame_left - 1) |
@@ -886,7 +888,6 @@ static int aspeed_video_set_resolution(struct aspeed_video *video)
 		aspeed_video_update(video, VE_CTRL, 0, VE_CTRL_INT_DE);
 	} else {
 		aspeed_video_update(video, VE_CTRL, 0, VE_CTRL_DIRECT_FETCH);
-		//aspeed_video_update(video, VE_CTRL, 0, VE_CTRL_HSYNC_POL | VE_CTRL_VSYNC_POL);
 	}
 
 	/* Set capture/compression frame sizes */
@@ -914,6 +915,7 @@ static int aspeed_video_set_resolution(struct aspeed_video *video)
 
 		if (!aspeed_video_alloc_buf(video, &video->srcs[1], size))
 			goto err_mem;
+
 		aspeed_video_write(video, VE_SRC0_ADDR, video->srcs[0].dma);
 		aspeed_video_write(video, VE_SRC1_ADDR, video->srcs[1].dma);
 	}
@@ -927,8 +929,8 @@ err_mem:
 		aspeed_video_free_buf(video, &video->srcs[0]);
 	if (video->srcs[1].size)
 		aspeed_video_free_buf(video, &video->srcs[1]);
-	return -1;
 
+	return -1;
 }
 
 static void aspeed_video_init_regs(struct aspeed_video *video)
@@ -1061,6 +1063,7 @@ static int aspeed_video_enum_input(struct file *file, void *fh,
 static int aspeed_video_get_input(struct file *file, void *fh, unsigned int *i)
 {
 	*i = 0;
+
 	return 0;
 }
 
@@ -1177,7 +1180,7 @@ static int aspeed_video_set_dv_timings(struct file *file, void *fh,
 
 	rc = aspeed_video_set_resolution(video);
 	if(rc){
-		printk("Set resoulutin FAIL!!\n");
+		dev_err(video->dev,"Set resoulutin FAIL!!\n");
 		return -1;
 	}
 
@@ -1406,17 +1409,16 @@ static void aspeed_video_resolution_work(struct work_struct *work)
 
 	rc = aspeed_video_get_resolution(video);
 	if(rc){
-		printk("Get resoulutin FAIL!!\n");
+		dev_err(video->dev,"Get resoulutin FAIL!!\n");
 		goto done;
 	}
 
-#if 1
 	/* Set timings since the device is being opened for the first time */
 	video->active_timings = video->detected_timings;
 
 	rc = aspeed_video_set_resolution(video);
 	if(rc){
-		printk("Set resoulutin FAIL!!\n");
+		dev_err(video->dev,"Set resoulutin FAIL!!\n");
 		goto done;
 	}
 
@@ -1424,9 +1426,9 @@ static void aspeed_video_resolution_work(struct work_struct *work)
 	video->pix_fmt.height = video->active_timings.height;
 	video->pix_fmt.sizeimage = video->max_compressed_size;
 
-
 	mutex_unlock(&video->video_lock);	
 
+#if 0
 	printk("VR004: 0x%X\n",aspeed_video_read(video, VE_SEQ_CTRL));
 	printk("VR008: 0x%X\n",aspeed_video_read(video, VE_CTRL));
 #endif 	
@@ -1441,7 +1443,6 @@ static void aspeed_video_resolution_work(struct work_struct *work)
 
 		v4l2_event_queue(&video->vdev, &ev);
 	} else if (test_bit(VIDEO_STREAMING, &video->flags)) {
-	//	msleep(500);
 		aspeed_video_start_frame(video);
 	}
 
@@ -1535,15 +1536,16 @@ static int aspeed_video_start_streaming(struct vb2_queue *q,
 	int rc;
 	struct aspeed_video *video = vb2_get_drv_priv(q);
 
+	dev_err(video->dev,"VNC start streaming\n");
+
 	video->sequence = 0;
-	
+
 	rc = aspeed_video_start_frame(video);
 	if (rc) {
 		aspeed_video_bufs_done(video, VB2_BUF_STATE_QUEUED);
 		return rc;
 	}
 
-//	printk("jerry set VIDEO_STREAMING [%d] [%s]\n",__LINE__,__func__);
 	set_bit(VIDEO_STREAMING, &video->flags);
 	return 0;
 }
@@ -1553,7 +1555,8 @@ static void aspeed_video_stop_streaming(struct vb2_queue *q)
 	int rc;
 	struct aspeed_video *video = vb2_get_drv_priv(q);
 
-//	printk("jerry clear VIDEO_STREAMING [%d] [%s]\n",__LINE__,__func__);
+	dev_err(video->dev,"VNC stop streaming\n");
+
 	clear_bit(VIDEO_STREAMING, &video->flags);
 
 	rc = wait_event_timeout(video->wait,
@@ -1566,6 +1569,7 @@ static void aspeed_video_stop_streaming(struct vb2_queue *q)
 		 * Need to force stop any DMA and try and get HW into a good
 		 * state for future calls to start streaming again.
 		 */
+		ast_videocap_reset_hw();
 		aspeed_video_reset(video);
 		aspeed_video_init_regs(video);
 
@@ -1743,15 +1747,6 @@ static int aspeed_video_probe(struct platform_device *pdev)
 
 	ast_videocap_reset_hw();
 
-/*
-	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-
-	video->base = devm_ioremap_resource(video->dev, res);
-
-	if (IS_ERR(video->base))
-		return PTR_ERR(video->base);
-*/
-
 	if (request_mem_region(AST_VIDEO_BASE, AST_VIDEOCAP_REG_SIZE, DEVICE_NAME) == NULL) {
 		printk(KERN_WARNING "%s: request memory region failed\n", DEVICE_NAME);
 		rc = -EBUSY;
@@ -1811,30 +1806,6 @@ static struct platform_driver aspeed_video_driver = {
 	.probe = aspeed_video_probe,
 	.remove = aspeed_video_remove,
 };
-
-/*
-static struct resource ast_video_resources[] =
-{
-	[0] = {
-		.start = AST_VIDEO_BASE,
-		.end = AST_VIDEO_BASE + SZ_128K - 1,
-		.flags = IORESOURCE_MEM,
-	},
-	[1] = {
-		.start = IRQ_VIDEO,
-		.end = IRQ_VIDEO,
-		.flags = IORESOURCE_IRQ,
-	}
-};
-
-static struct platform_device ast_video_device =
-{
-    .name       = DEVICE_NAME,
-	.id			= -1,
-    .resource   = ast_video_resources,
-    .num_resources = ARRAY_SIZE(ast_video_resources),
-};
-*/
 
 static struct platform_device *ast_video_device;
 
