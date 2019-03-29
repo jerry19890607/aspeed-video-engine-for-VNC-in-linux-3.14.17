@@ -31,8 +31,8 @@
 #include <media/videobuf2-dma-contig.h>
 
 #include <linux/slab.h>
-#include <media/videobuf2-core.h>
-#include <media/videobuf2-v4l2.h>
+//#include <media/videobuf2-core.h>
+//#include <media/videobuf2-v4l2.h>
 
 #define DEVICE_NAME			"aspeed-video"
 #define VIDEO_ENGINE_IRQ	7
@@ -759,7 +759,7 @@ static int aspeed_video_get_resolution(struct aspeed_video *video)
 		if (!aspeed_video_alloc_buf(video, &video->srcs[0],
 					    VE_MAX_SRC_BUFFER_SIZE)) {
 			dev_err(video->dev,
-				"Failed to allocate source buffers\n");
+				"Failed to allocate source buffers %d\n",__LINE__);
 			return -1;
 		}
 	}
@@ -785,12 +785,12 @@ static int aspeed_video_get_resolution(struct aspeed_video *video)
 		if (!rc) {
 			dev_err(video->dev, "Timed out; first mode detect\n");
 			clear_bit(VIDEO_RES_DETECT, &video->flags);
-			return -1;
+			//return -1;
 		}
 
 		/* Disable mode detect in order to re-trigger */
 		aspeed_video_update(video, VE_SEQ_CTRL,
-				    VE_SEQ_CTRL_TRIG_MODE_DET | VE_SEQ_CTRL_EN_WATCHDOG, 0);
+				    VE_SEQ_CTRL_TRIG_MODE_DET|VE_SEQ_CTRL_EN_WATCHDOG, 0);
 
 		aspeed_video_check_and_set_polarity(video);
 
@@ -802,7 +802,7 @@ static int aspeed_video_get_resolution(struct aspeed_video *video)
 		clear_bit(VIDEO_RES_DETECT, &video->flags);
 		if (!rc) {
 			dev_err(video->dev, "Timed out; second mode detect\n");
-			return -1;
+			//return -1;
 		}
 
 		src_lr_edge = aspeed_video_read(video, VE_SRC_LR_EDGE_DET);
@@ -824,14 +824,13 @@ static int aspeed_video_get_resolution(struct aspeed_video *video)
 		det->vsync = (sync & VE_SYNC_STATUS_VSYNC) >>
 			VE_SYNC_STATUS_VSYNC_SHF;
 
-
 		video->frame_right = (src_lr_edge & VE_SRC_LR_EDGE_DET_RT) >>
 			VE_SRC_LR_EDGE_DET_RT_SHF;
 		video->frame_left = src_lr_edge & VE_SRC_LR_EDGE_DET_LEFT;
 		if (video->frame_left > video->frame_right){
 			video->frame_left = 0;
 			video->frame_right = 799;
-		//	continue;
+			//continue;
 		}
 		det->hfrontporch = video->frame_left;
 		det->hbackporch = (mds & VE_MODE_DETECT_H_PIXELS) -
@@ -862,8 +861,7 @@ static int aspeed_video_get_resolution(struct aspeed_video *video)
 
 	printk("Resolution: [%dx%d]\n", det->width,det->height);
 
-//	printk("VIDEO_MODE_DETECT_DONE clear\n");
-//	clear_bit(VIDEO_MODE_DETECT_DONE, &video->flags);
+	clear_bit(VIDEO_MODE_DETECT_DONE, &video->flags);
 
 	return 0;
 }
@@ -1429,11 +1427,6 @@ static void aspeed_video_resolution_work(struct work_struct *work)
 
 	mutex_unlock(&video->video_lock);	
 
-#if 0
-	printk("VR004: 0x%X\n",aspeed_video_read(video, VE_SEQ_CTRL));
-	printk("VR008: 0x%X\n",aspeed_video_read(video, VE_CTRL));
-#endif 	
-	
 	if (video->detected_timings.width != video->active_timings.width ||
 	    video->detected_timings.height != video->active_timings.height ||
 	    input_status != video->v4l2_input_status) {
