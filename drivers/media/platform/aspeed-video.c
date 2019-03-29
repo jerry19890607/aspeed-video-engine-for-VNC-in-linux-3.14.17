@@ -561,18 +561,15 @@ static irqreturn_t aspeed_video_irq(int irq, void *arg)
 	}
 
 	if (sts & VE_INTERRUPT_MODE_DETECT) {
-		printk("jerry [%d] [%s]\n",__LINE__,__func__);
 		if (test_bit(VIDEO_RES_DETECT, &video->flags)) {
 			aspeed_video_update(video, VE_INTERRUPT_CTRL,
 					    VE_INTERRUPT_MODE_DETECT, 0);
 			aspeed_video_write(video, VE_INTERRUPT_STATUS,
 					   VE_INTERRUPT_MODE_DETECT);
 
-			printk("VIDEO_MODE_DETECT_DONE set\n");
 			set_bit(VIDEO_MODE_DETECT_DONE, &video->flags);
 			wake_up_interruptible_all(&video->wait);
 		} else {
-			printk("jerry [%d] [%s]\n",__LINE__,__func__);
 			/*
 			 * Signal acquired while NOT doing resolution
 			 * detection; reset the engine and re-initialize
@@ -756,16 +753,13 @@ static int aspeed_video_get_resolution(struct aspeed_video *video)
 		aspeed_video_free_buf(video, &video->srcs[1]);
 
 	if (video->srcs[0].size < VE_MAX_SRC_BUFFER_SIZE) {
-		if (video->srcs[0].size){
-			printk("free src0 and delay 10ms\n");
+		if (video->srcs[0].size)
 			aspeed_video_free_buf(video, &video->srcs[0]);
-			mdelay(10);
-		}
 
 		if (!aspeed_video_alloc_buf(video, &video->srcs[0],
 					    VE_MAX_SRC_BUFFER_SIZE)) {
 			dev_err(video->dev,
-				"Failed to allocate source buffers %d\n",__LINE__);
+				"Failed to allocate source buffers\n");
 			return -1;
 		}
 	}
@@ -785,7 +779,6 @@ static int aspeed_video_get_resolution(struct aspeed_video *video)
 		set_bit(VIDEO_RES_DETECT, &video->flags);
 		aspeed_video_enable_mode_detect(video);
 
-		printk("VIDEO_MODE_DETECT_DONE clear\n");
 		rc = wait_event_interruptible_timeout(video->wait,
 						      res_check(video),
 						      MODE_DETECT_TIMEOUT);
@@ -803,7 +796,6 @@ static int aspeed_video_get_resolution(struct aspeed_video *video)
 
 		aspeed_video_enable_mode_detect(video);
 
-		printk("VIDEO_MODE_DETECT_DONE clear\n");
 		rc = wait_event_interruptible_timeout(video->wait,
 						      res_check(video),
 						      MODE_DETECT_TIMEOUT);
@@ -845,7 +837,6 @@ static int aspeed_video_get_resolution(struct aspeed_video *video)
 		det->hbackporch = (mds & VE_MODE_DETECT_H_PIXELS) -
 			video->frame_right;
 		det->hsync = sync & VE_SYNC_STATUS_HSYNC;
-		printk("\nTop:[%d] Bottom:[%d] Left:[%d] Right:[%d]\n",video->frame_top,video->frame_bottom,video->frame_left,video->frame_right);
 
 		invalid_resolution = false;
 	} while (invalid_resolution && (tries++ < INVALID_RESOLUTION_RETRIES));
@@ -881,7 +872,6 @@ static int aspeed_video_set_resolution(struct aspeed_video *video)
 {
 	struct v4l2_bt_timings *act = &video->active_timings;
 	unsigned int size = act->width * act->height;
-	printk("act:[%dx%d]\n\n",act->width,act->height);
 
 	aspeed_video_calc_compressed_size(video, size);
 
